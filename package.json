@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "sync:fpl": "python3 adapters/fpl_private_adapter.py"
+  }
+}
