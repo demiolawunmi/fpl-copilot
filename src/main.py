@@ -18,7 +18,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATA_DIR = Path(__file__).resolve().parent / "data" / "api"
+def _find_repo_root() -> Path:
+    current_dir = Path(__file__).resolve().parent
+    for candidate in (current_dir, *current_dir.parents):
+        if (candidate / "data" / "api").is_dir():
+            return candidate
+    raise RuntimeError("Could not locate repo root containing data/api")
+
+REPO_ROOT = _find_repo_root()
+DATA_DIR = REPO_ROOT / "data" / "api"
 RESOLVED_DATA_DIR = DATA_DIR.resolve()
 
 
