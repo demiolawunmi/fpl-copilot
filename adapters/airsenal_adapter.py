@@ -27,6 +27,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import sqlite3
 from pathlib import Path
@@ -158,28 +159,110 @@ def detect_latest_transfers_timestamp(con: sqlite3.Connection, gw: int, fpl_team
 
 # --------------------------- GW detection -----------------------------
 
+def detect_calendar_next_gw(con: sqlite3.Connection) -> Optional[int]:
+    """
+    Use the current UTC date/time and scheduled fixtures to infer the next GW.
+    Mirrors AIrsenal's fixture-based logic:
+      - find the earliest future fixture GW in the current season
+      - if that GW has already started, advance to the following GW
+      - if no future dated fixtures exist, fall back to max scheduled GW + 1
+    """
+    if not has_table(con, "fixture"):
+        return None
+
+    season = infer_current_season(con)
+    date_expr = fixture_date_expr(con, alias="f")
+    if date_expr == "NULL":
+        return None
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    params: Dict[str, Any] = {"now": now_utc}
+    season_filter = ""
+    if season:
+        params["season"] = season
+        season_filter = "AND f.season = :season"
+
+    row = q(con, f"""
+        SELECT MIN(f.gameweek) AS gw
+        FROM fixture f
+        WHERE f.gameweek IS NOT NULL
+          AND {date_expr} IS NOT NULL
+          {season_filter}
+          AND datetime({date_expr}) > datetime(:now);
+    """, params)
+
+    if row and row[0].get("gw") is not None:
+        next_gw = int(row[0]["gw"])
+        started = q(con, f"""
+            SELECT 1 AS started
+            FROM fixture f
+            WHERE f.gameweek = :gw
+              AND {date_expr} IS NOT NULL
+              {season_filter}
+              AND datetime({date_expr}) < datetime(:now)
+            LIMIT 1;
+        """, {**params, "gw": next_gw})
+        if started:
+            next_gw += 1
+        return next_gw
+
+    row = q(con, f"""
+        SELECT MAX(f.gameweek) AS gw
+        FROM fixture f
+        WHERE f.gameweek IS NOT NULL
+          {season_filter};
+    """, params)
+    if row and row[0].get("gw") is not None:
+        return int(row[0]["gw"]) + 1
+
+    return None
+
 def detect_next_gw(con: sqlite3.Connection) -> Optional[int]:
     """
-    Try to infer the 'next' GW to export predictions for.
+    Try to infer the next GW to export predictions for.
     Strategy:
-      - if predictedscore exists, use MIN(gameweek) in that table
-      - else if player_prediction exists, use MIN(f.gameweek) present in that table
+      - use current UTC date/time plus fixture dates to derive the next calendar GW
+      - if prediction tables exist, choose the smallest predicted GW at or after that floor
+      - otherwise fall back to the calendar-derived GW
     """
+    season = infer_current_season(con)
+    calendar_gw = detect_calendar_next_gw(con)
+
     if has_table(con, "predictedscore"):
-        row = q(con, "SELECT MIN(gameweek) AS gw FROM predictedscore WHERE gameweek IS NOT NULL;")
+        ps_cols = table_columns(con, "predictedscore")
+        params: Dict[str, Any] = {}
+        clauses = ["gameweek IS NOT NULL"]
+        if calendar_gw is not None:
+            clauses.append("gameweek >= :gw_floor")
+            params["gw_floor"] = calendar_gw
+        if season and "season" in ps_cols:
+            clauses.append("season = :season")
+            params["season"] = season
+
+        row = q(con, f"SELECT MIN(gameweek) AS gw FROM predictedscore WHERE {' AND '.join(clauses)};", params)
         if row and row[0].get("gw") is not None:
             return int(row[0]["gw"])
 
     if has_table(con, "player_prediction") and has_table(con, "fixture"):
-        row = q(con, """
-            SELECT MIN(f.gameweek) AS gw
-            FROM player_prediction pp
-            JOIN fixture f ON f.fixture_id = pp.fixture_id;
-        """)
+        params = {}
+        clauses = ["f.gameweek IS NOT NULL"]
+        if season:
+            clauses.append("f.season = :season")
+            params["season"] = season
+        if calendar_gw is not None:
+            clauses.append("f.gameweek >= :gw_floor")
+            params["gw_floor"] = calendar_gw
+
+        row = q(con, f"""
+             SELECT MIN(f.gameweek) AS gw
+             FROM player_prediction pp
+             JOIN fixture f ON f.fixture_id = pp.fixture_id
+            WHERE {' AND '.join(clauses)};
+        """, params)
         if row and row[0].get("gw") is not None:
             return int(row[0]["gw"])
 
-    return None
+    return calendar_gw
 
 # --------------------------- exports ----------------------------------
 
