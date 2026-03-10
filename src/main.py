@@ -3,6 +3,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
+from typing import List, Optional
+
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -74,3 +77,65 @@ def bandwagons():
 def files(name: str):
     filename = name if name.endswith(".json") else f"{name}.json"
     return _serve_api_file(filename)
+
+
+# ---------------------------------------------------------------------------
+# FDR endpoints
+# ---------------------------------------------------------------------------
+
+class PlayerRecord(BaseModel):
+    """Minimal player record used for injury-adjusted FDR computation."""
+    position: str
+    minutes_last6: Optional[float] = None
+    goals90: Optional[float] = None
+    assists90: Optional[float] = None
+    prob_available: Optional[float] = None
+    status: Optional[str] = None
+
+
+class FixtureFDRRequest(BaseModel):
+    team: str
+    opponent: str
+    is_home: bool
+    snapshot_date: Optional[str] = None
+    team_players: Optional[List[PlayerRecord]] = None
+    opp_players: Optional[List[PlayerRecord]] = None
+
+
+@app.post("/api/fdr/fixture")
+def fixture_fdr(req: FixtureFDRRequest):
+    """Compute attack, defence and overall FDR for a single fixture.
+
+    Uses ClubElo ratings (fetched automatically unless unavailable) and
+    optional per-player injury data to produce a detailed difficulty
+    breakdown.
+    """
+    from src.services.fixture_fdr import compute_fixture_fdr
+
+    team_players = [p.model_dump() for p in req.team_players] if req.team_players else []
+    opp_players = [p.model_dump() for p in req.opp_players] if req.opp_players else []
+
+    result = compute_fixture_fdr(
+        team_name=req.team,
+        opponent_name=req.opponent,
+        is_home=req.is_home,
+        team_players=team_players,
+        opp_players=opp_players,
+        snapshot_date=req.snapshot_date,
+    )
+    return result
+
+
+@app.get("/api/fdr/elo")
+def elo_ratings(snapshot_date: Optional[str] = None):
+    """Return the current ClubElo ratings for all clubs.
+
+    Pass ``?snapshot_date=YYYY-MM-DD`` to fetch ratings for a specific date
+    (defaults to today UTC).
+    """
+    from src.services.club_elo import fetch_elo_ratings
+
+    ratings = fetch_elo_ratings(snapshot_date)
+    if not ratings:
+        raise HTTPException(status_code=503, detail="ClubElo ratings unavailable")
+    return ratings
