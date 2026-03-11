@@ -28,10 +28,12 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
-from src.services.club_elo import fetch_elo_ratings, get_team_elo
-from src.services.injury_impact import team_injury_losses
+from src.services.club_elo import get_team_elo
+from src.services.injury_impact import summarize_injury_impact
+from src.services.injury_news import team_id_for_name
+from src.services.squad_change import summarize_squad_changes
 
 HOME_ELO_BONUS: float = 55.0
 _SIGMOID_SLOPE: float = 3.0
@@ -41,6 +43,10 @@ _ATT_OWN_LOSS_W: float = 0.55   # own attack loss increases attack difficulty
 _ATT_OPP_DEF_LOSS_W: float = 0.85  # opp defensive loss decreases attack difficulty
 _DEF_OWN_LOSS_W: float = 0.70   # own defensive loss increases defence difficulty
 _DEF_OPP_ATT_LOSS_W: float = 0.85  # opp attacking loss decreases defence difficulty
+_TEAM_SQUAD_ATTACK_W: float = 0.35
+_TEAM_SQUAD_DEFENCE_W: float = 0.45
+_OPP_SQUAD_ATTACK_W: float = 0.45
+_OPP_SQUAD_DEFENCE_W: float = 0.45
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +59,14 @@ def sigmoid(x: float) -> float:
 
 def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
+
+
+def _summary_float(summary: Dict[str, object], key: str) -> float:
+    return float(cast(float, summary.get(key, 0.0)))
+
+
+def _summary_list(summary: Dict[str, object], key: str) -> list[Dict]:
+    return list(cast(list[Dict], summary.get(key, [])))
 
 
 def elo_base(
@@ -72,12 +86,42 @@ def elo_base(
     return 0.5 - expected
 
 
+def _merge_absence_debug(injury_summary: Dict[str, object], squad_summary: Dict[str, object], side: str) -> tuple[list[Dict], list[Dict]]:
+    counted = [
+        {**item, "layer": "injury", "side": side}
+        for item in _summary_list(injury_summary, "counted_absences")
+    ] + [
+        {**item, "layer": "squad_change", "side": side}
+        for item in _summary_list(squad_summary, "counted_absences")
+    ]
+    ignored = [
+        {**item, "layer": "injury", "side": side}
+        for item in _summary_list(injury_summary, "ignored_absences")
+    ] + [
+        {**item, "layer": "squad_change", "side": side}
+        for item in _summary_list(squad_summary, "ignored_absences")
+    ]
+    return counted, ignored
+
+
+def _sorted_key_absences(absences: list[Dict]) -> list[Dict]:
+    return sorted(
+        absences,
+        key=lambda item: (
+            max(float(item.get("attacking_impact", 0.0)), float(item.get("defensive_impact", 0.0))),
+            item.get("player_name") or "",
+        ),
+        reverse=True,
+    )
+
+
 def raw_fdrs(
     team_elo: float,
     opp_elo: float,
     is_home: bool,
     team_players: Optional[List[Dict]] = None,
     opp_players: Optional[List[Dict]] = None,
+    snapshot_date: Optional[str] = None,
 ) -> tuple[float, float, float]:
     """Compute (rawAttack, rawDefence, rawOverall) difficulty scores.
 
@@ -93,11 +137,34 @@ def raw_fdrs(
     """
     base = elo_base(team_elo, opp_elo, is_home)
 
-    team_att_loss, team_def_loss = team_injury_losses(team_players or [])
-    opp_att_loss, opp_def_loss = team_injury_losses(opp_players or [])
+    team_injury = summarize_injury_impact(team_players or [])
+    opp_injury = summarize_injury_impact(opp_players or [])
+    team_squad = summarize_squad_changes(team_players or [], snapshot_date=snapshot_date)
+    opp_squad = summarize_squad_changes(opp_players or [], snapshot_date=snapshot_date)
 
-    raw_attack = base + _ATT_OWN_LOSS_W * team_att_loss - _ATT_OPP_DEF_LOSS_W * opp_def_loss
-    raw_defence = base + _DEF_OWN_LOSS_W * team_def_loss - _DEF_OPP_ATT_LOSS_W * opp_att_loss
+    team_att_loss = _summary_float(team_injury, "att_loss")
+    team_def_loss = _summary_float(team_injury, "def_loss")
+    opp_att_loss = _summary_float(opp_injury, "att_loss")
+    opp_def_loss = _summary_float(opp_injury, "def_loss")
+    team_squad_att = _summary_float(team_squad, "attack_loss")
+    team_squad_def = _summary_float(team_squad, "defence_loss")
+    opp_squad_att = _summary_float(opp_squad, "attack_loss")
+    opp_squad_def = _summary_float(opp_squad, "defence_loss")
+
+    raw_attack = (
+        base
+        + _ATT_OWN_LOSS_W * team_att_loss
+        - _ATT_OPP_DEF_LOSS_W * opp_def_loss
+        + _TEAM_SQUAD_ATTACK_W * team_squad_att
+        - _OPP_SQUAD_DEFENCE_W * opp_squad_def
+    )
+    raw_defence = (
+        base
+        + _DEF_OWN_LOSS_W * team_def_loss
+        - _DEF_OPP_ATT_LOSS_W * opp_att_loss
+        + _TEAM_SQUAD_DEFENCE_W * team_squad_def
+        - _OPP_SQUAD_ATTACK_W * opp_squad_att
+    )
     raw_overall = 0.55 * raw_attack + 0.45 * raw_defence
 
     return raw_attack, raw_defence, raw_overall
@@ -160,11 +227,39 @@ def compute_fixture_fdr(
 
     base = elo_base(elo_team, elo_opp, is_home)
 
-    team_att_loss, team_def_loss = team_injury_losses(team_players or [])
-    opp_att_loss, opp_def_loss = team_injury_losses(opp_players or [])
+    team_injury = summarize_injury_impact(team_players or [])
+    opp_injury = summarize_injury_impact(opp_players or [])
+    team_squad = summarize_squad_changes(team_players or [], snapshot_date=date_str)
+    opp_squad = summarize_squad_changes(opp_players or [], snapshot_date=date_str)
 
-    raw_attack = base + _ATT_OWN_LOSS_W * team_att_loss - _ATT_OPP_DEF_LOSS_W * opp_def_loss
-    raw_defence = base + _DEF_OWN_LOSS_W * team_def_loss - _DEF_OPP_ATT_LOSS_W * opp_att_loss
+    team_att_loss = _summary_float(team_injury, "att_loss")
+    team_def_loss = _summary_float(team_injury, "def_loss")
+    opp_att_loss = _summary_float(opp_injury, "att_loss")
+    opp_def_loss = _summary_float(opp_injury, "def_loss")
+    team_squad_att = _summary_float(team_squad, "attack_loss")
+    team_squad_def = _summary_float(team_squad, "defence_loss")
+    opp_squad_att = _summary_float(opp_squad, "attack_loss")
+    opp_squad_def = _summary_float(opp_squad, "defence_loss")
+
+    team_counted_absences, team_ignored_absences = _merge_absence_debug(team_injury, team_squad, side="team")
+    opp_counted_absences, opp_ignored_absences = _merge_absence_debug(opp_injury, opp_squad, side="opponent")
+    key_absences_counted = _sorted_key_absences(team_counted_absences + opp_counted_absences)
+    key_absences_ignored = _sorted_key_absences(team_ignored_absences + opp_ignored_absences)
+
+    raw_attack = (
+        base
+        + _ATT_OWN_LOSS_W * team_att_loss
+        - _ATT_OPP_DEF_LOSS_W * opp_def_loss
+        + _TEAM_SQUAD_ATTACK_W * team_squad_att
+        - _OPP_SQUAD_DEFENCE_W * opp_squad_def
+    )
+    raw_defence = (
+        base
+        + _DEF_OWN_LOSS_W * team_def_loss
+        - _DEF_OPP_ATT_LOSS_W * opp_att_loss
+        + _TEAM_SQUAD_DEFENCE_W * team_squad_def
+        - _OPP_SQUAD_ATTACK_W * opp_squad_att
+    )
     raw_overall = 0.55 * raw_attack + 0.45 * raw_defence
 
     attack_fdr = to_fdr(raw_attack)
@@ -173,15 +268,27 @@ def compute_fixture_fdr(
 
     return {
         "team": team_name,
+        "team_id": team_id_for_name(team_name),
         "opponent": opponent_name,
+        "opponent_id": team_id_for_name(opponent_name),
         "is_home": is_home,
         "elo_team": round(elo_team, 2),
         "elo_opponent": round(elo_opp, 2),
         "base_raw": round(base, 4),
         "team_attack_loss": round(team_att_loss, 4),
         "team_defence_loss": round(team_def_loss, 4),
+        "team_squad_change_attack_loss": round(team_squad_att, 4),
+        "team_squad_change_defence_loss": round(team_squad_def, 4),
         "opp_attack_loss": round(opp_att_loss, 4),
         "opp_defence_loss": round(opp_def_loss, 4),
+        "opp_squad_change_attack_loss": round(opp_squad_att, 4),
+        "opp_squad_change_defence_loss": round(opp_squad_def, 4),
+        "team_counted_absences": team_counted_absences,
+        "team_ignored_absences": team_ignored_absences,
+        "opp_counted_absences": opp_counted_absences,
+        "opp_ignored_absences": opp_ignored_absences,
+        "key_absences_counted": key_absences_counted,
+        "key_absences_ignored": key_absences_ignored,
         "raw_attack": round(raw_attack, 4),
         "raw_defence": round(raw_defence, 4),
         "raw_overall": round(raw_overall, 4),
