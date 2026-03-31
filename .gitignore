@@ -44,9 +44,11 @@ yarn-error.log*
 # Node
 node_modules/
 
-# Database files
-data/*.db
-**/data/*.db
+# Local FPL / AIrsenal state (tokens, password, team id, DB path)
+.airsenal_home/
+
+# Local API cache and snapshots (account-specific responses)
+data/
 
 # Jupyter
 .ipynb_checkpoints/
