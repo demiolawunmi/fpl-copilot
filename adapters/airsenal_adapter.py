@@ -10,6 +10,8 @@ Creates (when source tables exist):
     gw_<GW>_predictions.json
     gw_<GW>_fixtures_by_player.json
     gw_<GW>_transfers.json
+    gw_<GW>_optimization_<FPL_TEAM_ID>.json  (requires --team-id; from transfer_suggestion)
+    gw_<GW>_lineup_<FPL_TEAM_ID>.json  (requires --team-id; Squad.optimize_lineup via AIrsenal)
     injury_news.json
     form_last4.json
     bandwagons.json
@@ -29,8 +31,15 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 import sqlite3
+import sys
 from pathlib import Path
+
+# Allow ``from adapters.…`` when run as ``python adapters/airsenal_adapter.py`` (cwd = repo root).
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 # ------------------------------ util ---------------------------------
@@ -528,6 +537,167 @@ def export_transfers(con: sqlite3.Connection, outdir: Path, gw: int, fpl_team_id
     write_json(outdir, f"gw_{gw}_transfers.json", out_rows)
     log(f"✓ gw_{gw}_transfers.json  ({len(out_rows)} rows){' (ts '+ts+')' if ts else ''}")
 
+
+def _norm_chip_played(val: Any) -> Optional[str]:
+    if val is None:
+        return None
+    s = str(val).strip()
+    if s == "" or s.lower() in ("none", "null"):
+        return None
+    return s
+
+
+def export_optimization(
+    con: sqlite3.Connection,
+    outdir: Path,
+    gw: int,
+    fpl_team_id: Optional[int],
+    season: Optional[str],
+) -> None:
+    """
+    Export the latest optimization run from ``transfer_suggestion`` as structured JSON.
+
+    AIrsenal stores per-player rows (in/out per gameweek), ``chip_played``, and a
+    single ``points_gain`` (strategy total minus baseline) repeated on each row.
+    Baseline / strategy absolute totals and per-GW predicted scores are *not* stored
+    in this table (those only exist in the optimizer's in-memory strategy / deleted
+    JSON under ``AIRSENAL_HOME/airsopt`` during a run).
+    """
+    log("exporting optimization summary…")
+
+    if fpl_team_id is None:
+        log("WARN: no --team-id; skipping gw_*_optimization_*.json (need FPL team id)")
+        return
+
+    t = first_table(con, ["transfer_suggestion", "transfersuggestion"])
+    if not t:
+        log("WARN: no transfer_suggestion table; skipping optimization export")
+        return
+
+    cols = table_columns(con, t)
+    if "fpl_team_id" not in cols:
+        log("WARN: transfer_suggestion has no fpl_team_id; skipping optimization export")
+        return
+
+    params: Dict[str, Any] = {"tid": fpl_team_id}
+    season_filter = ""
+    if season and "season" in cols:
+        season_filter = " AND ts.season = :season "
+        params["season"] = season
+
+    row = q(
+        con,
+        f"""
+        SELECT MAX(ts.timestamp) AS ts
+        FROM {t} ts
+        WHERE ts.fpl_team_id = :tid
+        {season_filter}
+        """,
+        params,
+    )
+    ts = row[0]["ts"] if row and row[0].get("ts") else None
+    if not ts:
+        log(f"WARN: no transfer_suggestion rows for team {fpl_team_id}; skipping optimization export")
+        return
+
+    params2: Dict[str, Any] = {"tid": fpl_team_id, "ts": ts}
+    if season and "season" in cols:
+        params2["season"] = season
+
+    season_where = " AND ts.season = :season " if (season and "season" in cols) else ""
+
+    sql = f"""
+        SELECT
+          ts.gameweek,
+          ts.in_or_out,
+          ts.points_gain,
+          ts.timestamp,
+          ts.season,
+          ts.fpl_team_id,
+          ts.chip_played,
+          pl.player_id,
+          COALESCE(pl.display_name, pl.name) AS name
+        FROM {t} ts
+        JOIN player pl ON pl.player_id = ts.player_id
+        WHERE ts.fpl_team_id = :tid
+          AND ts.timestamp = :ts
+        {season_where}
+        ORDER BY ts.gameweek, ts.in_or_out DESC, ts.points_gain DESC, pl.player_id;
+    """
+    rows = q(con, sql, params2)
+
+    if not rows:
+        log("WARN: optimization query returned no rows; skipping")
+        return
+
+    by_gw: Dict[int, Dict[str, Any]] = {}
+    total_gain: Optional[float] = None
+    season_out: Optional[str] = None
+
+    for r in rows:
+        g = int(r["gameweek"])
+        entry = by_gw.setdefault(
+            g,
+            {
+                "gameweek": g,
+                "players_out": [],
+                "players_in": [],
+                "chip_played": _norm_chip_played(r.get("chip_played")),
+                "transfer_pairs": [],
+            },
+        )
+        if r.get("chip_played") is not None:
+            entry["chip_played"] = _norm_chip_played(r.get("chip_played"))
+        if r.get("points_gain") is not None:
+            total_gain = float(r["points_gain"])
+        if r.get("season"):
+            season_out = str(r["season"])
+
+        ioo = r.get("in_or_out")
+        if ioo is None:
+            continue
+        pinfo = {"player_id": int(r["player_id"]), "name": r["name"]}
+        if int(ioo) > 0:
+            entry["players_in"].append(pinfo)
+        else:
+            entry["players_out"].append(pinfo)
+
+    gws_sorted = sorted(by_gw.keys())
+    for g in gws_sorted:
+        e = by_gw[g]
+        outs = e["players_out"]
+        ins = e["players_in"]
+        pairs: List[Dict[str, Any]] = []
+        n = max(len(outs), len(ins))
+        for i in range(n):
+            pairs.append(
+                {
+                    "player_out": outs[i] if i < len(outs) else None,
+                    "player_in": ins[i] if i < len(ins) else None,
+                }
+            )
+        e["transfer_pairs"] = pairs
+
+    payload: Dict[str, Any] = {
+        "fpl_team_id": fpl_team_id,
+        "export_anchor_gameweek": gw,
+        "timestamp": str(ts),
+        "season": season_out,
+        "source_table": t,
+        "total_points_gain_vs_baseline": total_gain,
+        "notes": (
+            "total_points_gain_vs_baseline is (strategy total − baseline total) from the "
+            "optimizer, stored once per row in transfer_suggestion. Absolute baseline and "
+            "strategy scores, per-gameweek points hit, and per-GW predicted scores are not "
+            "persisted in SQLite; they only appear in the optimizer console output."
+        ),
+        "gameweeks": [by_gw[g] for g in gws_sorted],
+    }
+
+    write_json(outdir, f"gw_{gw}_optimization_{fpl_team_id}.json", payload)
+    log(f"✓ gw_{gw}_optimization_{fpl_team_id}.json  ({len(gws_sorted)} GWs, ts {ts})")
+
+
 def export_injury_news(con: sqlite3.Connection, outdir: Path, gw: int, season: Optional[str]) -> None:
     log("exporting injury_news…")
 
@@ -750,6 +920,10 @@ def main() -> None:
     if not Path(db_path).exists():
         raise SystemExit(f"DB not found at {db_path}")
 
+    repo_root = _REPO_ROOT
+    os.environ.setdefault("AIRSENAL_HOME", str(repo_root / ".airsenal_home"))
+    os.environ["AIRSENAL_DB_FILE"] = str(Path(db_path).resolve())
+
     con = connect(db_path)
 
     # Determine GW
@@ -771,6 +945,22 @@ def main() -> None:
     export_predictions(con, outdir, gw, season_target)
     export_fixtures_by_player(con, outdir, gw, season_target)
     export_transfers(con, outdir, gw, args.team_id)
+    export_optimization(con, outdir, gw, args.team_id, season_target)
+    if args.team_id:
+        try:
+            from adapters.airsenal_lineup_export import export_recommended_lineup
+
+            export_recommended_lineup(
+                str(Path(db_path).resolve()),
+                con,
+                outdir,
+                gw,
+                args.team_id,
+                season_target,
+                repo_root,
+            )
+        except Exception as exc:
+            log(f"WARN: lineup export failed: {exc}")
     export_injury_news(con, outdir, gw, season_target)
     export_form_last4(con, outdir, gw, season_target)
     export_bandwagons(con, outdir, gw, season_target)

@@ -1,11 +1,20 @@
 # backend_repo/main.py
-from fastapi import FastAPI, HTTPException, Query
+import os
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, RootModel, model_validator
+
+from src.services.airsenal_runner import (
+    AirsenalRunError,
+    AirsenalRunRequest,
+    AirsenalRunResponse,
+    run_airsenal_action,
+)
 
 app = FastAPI()
 
@@ -71,6 +80,64 @@ def form_last4():
 def bandwagons():
     """Return bandwagons.json"""
     return _serve_api_file("bandwagons.json")
+
+
+def _require_airsenal_run_key(
+    x_airsenal_run_key: Optional[str] = Header(None, alias="X-Airsenal-Run-Key"),
+) -> None:
+    """Optional gate: set env ``AIRSENAL_RUN_API_KEY`` to require the same value in this header."""
+    expected = os.environ.get("AIRSENAL_RUN_API_KEY")
+    if not expected:
+        return
+    if x_airsenal_run_key != expected:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing X-Airsenal-Run-Key (must match AIRSENAL_RUN_API_KEY).",
+        )
+
+
+@app.post(
+    "/api/airsenal/run",
+    response_model=AirsenalRunResponse,
+    dependencies=[Depends(_require_airsenal_run_key)],
+)
+def airsenal_run(req: AirsenalRunRequest) -> AirsenalRunResponse:
+    """Run AIrsenal CLI steps (same environment as ``scripts/airsenal.sh``).
+
+    Actions:
+    - ``update_db`` — ``airsenal_update_db``
+    - ``predict`` — ``airsenal_run_prediction``
+    - ``optimize`` — ``airsenal_run_optimization`` (needs team id)
+    - ``export`` — ``adapters/airsenal_adapter.py`` JSON export into ``data/api``
+    - ``pipeline`` — update → predict → optimize → export
+
+    Long-running; clients should use a generous HTTP timeout. Override with env
+    ``AIRSENAL_RUN_TIMEOUT_SEC`` (default 3600).
+
+    When ``AIRSENAL_RUN_API_KEY`` is set in the server environment, requests must
+    send header ``X-Airsenal-Run-Key`` with the same value.
+    """
+    def _clip(s: str, n: int) -> str:
+        if len(s) <= n:
+            return s
+        return s[:n] + "\n... [truncated]"
+
+    try:
+        return run_airsenal_action(req)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except AirsenalRunError as exc:
+        msg = str(exc)
+        if exc.completed is None:
+            if "timed out" in msg.lower():
+                raise HTTPException(status_code=504, detail=msg) from exc
+            if "required" in msg:
+                raise HTTPException(status_code=400, detail=msg) from exc
+        detail: Dict[str, Any] = {"message": msg}
+        if exc.completed is not None:
+            detail["stderr"] = _clip(exc.completed.stderr or "", 12_000)
+            detail["stdout"] = _clip(exc.completed.stdout or "", 12_000)
+        raise HTTPException(status_code=500, detail=detail) from exc
 
 
 @app.get("/api/files/{name}")
@@ -201,6 +268,12 @@ class FixtureSaturatedResponse(BaseModel):
     is_home: bool
     team_players: List[PlayerRecord]
     opp_players: List[PlayerRecord]
+    official_fpl_fdr: Optional[int] = None
+    official_fpl_home_difficulty: Optional[int] = None
+    official_fpl_away_difficulty: Optional[int] = None
+    official_fpl_event: Optional[int] = None
+    official_fpl_kickoff_time: Optional[str] = None
+    official_fpl_source: Optional[str] = None
 
 
 class FixtureFDRResponse(BaseModel):
@@ -219,6 +292,9 @@ def _build_fixture_fdr_response(
     opp_players: list[dict],
 ) -> FixtureFDRResponse:
     from src.services.fixture_fdr import compute_fixture_fdr
+    from src.services.fpl_official_fdr import build_official_fpl_fields
+
+    official_fields = build_official_fpl_fields(context)
 
     fdr_result = compute_fixture_fdr(
         team_name=context["team"],
@@ -237,6 +313,7 @@ def _build_fixture_fdr_response(
 
     saturated = {
         **context,
+        **official_fields,
         "snapshot_date": snapshot_date,
         "team_players": team_players,
         "opp_players": opp_players,

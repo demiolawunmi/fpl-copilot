@@ -117,6 +117,20 @@ run_optimization() {
   airsenal_run_optimization --weeks_ahead "$weeks" --fpl_team_id "$TEAM_ID"
 }
 
+# Export API JSON via adapters/airsenal_adapter.py (predictions, transfers,
+# gw_<GW>_optimization_<FPL_TEAM_ID>.json when --team-id is set, etc.)
+run_adapter_export() {
+  local gw="${1:-auto}"
+  echo
+  echo "📦 Exporting JSON to $OUT"
+  echo "   (gw_<GW>_optimization_<TEAM_ID>.json + gw_<GW>_lineup_<TEAM_ID>.json when team id set)"
+  local adapter_cmd=(python "$REPO_ROOT/adapters/airsenal_adapter.py" --db "$DB" --out "$OUT" --gw "$gw")
+  if [[ -n "${TEAM_ID:-}" ]]; then
+    adapter_cmd+=(--team-id "$TEAM_ID")
+  fi
+  "${adapter_cmd[@]}"
+}
+
 ensure_team_id() {
   if [[ -z "$TEAM_ID" ]]; then
     read -r -p "FPL Team ID: " TEAM_ID
@@ -162,16 +176,17 @@ echo "  1) Run optimization (airsenal_run_optimization)"
 echo "  2) Update database (airsenal_update_db)"
 echo "  3) Run predictions (airsenal_run_prediction --weeks_ahead 3)"
 echo "  4) Update DB + Run Predictions"
-echo "  5) Full pipeline: Update → Predict → Optimize"
-echo "  6) Export JSON (python adapters/airsenal_adapter.py)"
+echo "  5) Full pipeline: Update → Predict → Optimize → Export JSON (incl. optimization)"
+echo "  6) Export JSON only (airsenal_adapter: predictions, transfers, gw_*_optimization_* …)"
 echo "  7) Run a custom command"
 echo "  8) Do nothing (just keep env activated)"
-read -r -p "Enter 1-8: " choice
+echo "  9) Test adapter export (--gw auto; needs team id → gw_*_optimization_* + gw_*_lineup_*)"
+read -r -p "Enter 1-9: " choice
 
 case "$choice" in
   1)
-    maybe_prompt_update_before_optimization
     weeks="$(prompt_weeks_ahead)"
+    maybe_prompt_update_before_optimization
     run_optimization "$weeks" || return 1 2>/dev/null || exit 1
     ;;
   2)
@@ -182,27 +197,27 @@ case "$choice" in
     run_predictions "$weeks"
     ;;
   4)
-    run_update_db
     weeks="$(prompt_weeks_ahead)"
+    run_update_db
     run_predictions "$weeks"
     ;;
   5)
-    run_update_db
     weeks="$(prompt_weeks_ahead)"
+    ensure_team_id || return 1 2>/dev/null || exit 1
+    read -r -p "GW for JSON export / optimization file (default auto): " export_gw
+    export_gw="${export_gw:-auto}"
+    run_update_db
     run_predictions "$weeks"
     run_optimization "$weeks" || return 1 2>/dev/null || exit 1
+    run_adapter_export "$export_gw"
     ;;
   6)
     read -r -p "GW (default auto): " gw
     gw="${gw:-auto}"
     if [[ -z "$TEAM_ID" ]]; then
-      read -r -p "FPL Team ID (optional, improves transfer pairing): " TEAM_ID
+      read -r -p "FPL Team ID (optional; required for gw_*_optimization_*): " TEAM_ID
     fi
-    adapter_cmd=(python "$REPO_ROOT/adapters/airsenal_adapter.py" --db "$DB" --out "$OUT" --gw "$gw")
-    if [[ -n "$TEAM_ID" ]]; then
-      adapter_cmd+=(--team-id "$TEAM_ID")
-    fi
-    "${adapter_cmd[@]}"
+    run_adapter_export "$gw"
     ;;
   7)
     echo "Enter a command to run (example: airsenal_update_db --help)"
@@ -212,6 +227,13 @@ case "$choice" in
     ;;
   8)
     echo "👍 Leaving you in the AIrsenal environment."
+    ;;
+  9)
+    echo
+    echo "🧪 Test: run airsenal_adapter with --gw auto (writes JSON under $OUT)."
+    echo "   Team id is required for gw_<GW>_optimization_<TEAM> and gw_<GW>_lineup_<TEAM>."
+    ensure_team_id || return 1 2>/dev/null || exit 1
+    run_adapter_export "auto"
     ;;
   *)
     echo "Invalid choice."
