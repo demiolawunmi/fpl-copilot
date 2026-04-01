@@ -4,11 +4,11 @@ set -euo pipefail
 
 
 if [[ -f "$PWD/main.py" && -f "$PWD/scripts/backend.sh" ]]; then
-  REPO_ROOT="$PWD"
+  REPO_ROOT="$(cd "$PWD" && pwd -P)"
 elif [[ "$(basename "$PWD")" == "scripts" && -f "$PWD/../main.py" ]]; then
-  REPO_ROOT="$(cd "$PWD/.." && pwd)"
+  REPO_ROOT="$(cd "$PWD/.." && pwd -P)"
 elif [[ -n "${BASH_SOURCE[0]-}" ]]; then
-  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 else
   echo "❌ Could not determine repo root."
   echo "Run this from the repo root with: source scripts/backend.sh"
