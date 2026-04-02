@@ -1,13 +1,16 @@
 # backend_repo/main.py
+import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 from src.services.airsenal_runner import (
     AirsenalRunError,
@@ -16,7 +19,58 @@ from src.services.airsenal_runner import (
     run_airsenal_action,
 )
 
-app = FastAPI()
+# ---------------------------------------------------------------------------
+# Background worker constants
+# ---------------------------------------------------------------------------
+WORKER_IDLE_SLEEP = 2
+WORKER_ERROR_BACKOFF = 5
+WORKER_SHUTDOWN_TIMEOUT = 35
+
+logger = logging.getLogger("copilot.worker")
+
+
+async def _worker_loop(
+    *,
+    shutdown_event: asyncio.Event,
+) -> None:
+    logger.info("worker: started")
+    service = None
+    while not shutdown_event.is_set():
+        if service is None:
+            try:
+                service = _get_copilot_job_service()
+            except Exception as exc:
+                logger.warning("worker: service unavailable: %s", exc)
+                await asyncio.sleep(WORKER_IDLE_SLEEP)
+                continue
+        try:
+            result = await asyncio.to_thread(service.execute_next_queued_job)
+            if result is None:
+                await asyncio.sleep(WORKER_IDLE_SLEEP)
+            else:
+                job_id = result.get("job_id", "?")
+                status = result.get("status", "?")
+                logger.info("worker: job %s finished with status=%s", job_id, status)
+        except Exception as exc:
+            logger.error("worker: unexpected error: %s", exc, exc_info=True)
+            await asyncio.sleep(WORKER_ERROR_BACKOFF)
+    logger.info("worker: shutdown complete")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    shutdown_event = asyncio.Event()
+    task = asyncio.create_task(_worker_loop(shutdown_event=shutdown_event))
+    yield
+    shutdown_event.set()
+    try:
+        await asyncio.wait_for(task, timeout=WORKER_SHUTDOWN_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.warning("worker: did not shut down within %ss, cancelling", WORKER_SHUTDOWN_TIMEOUT)
+        task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # allow your frontend dev server + production domain later
 app.add_middleware(
@@ -144,6 +198,189 @@ def airsenal_run(req: AirsenalRunRequest) -> AirsenalRunResponse:
 def files(name: str):
     filename = name if name.endswith(".json") else f"{name}.json"
     return _serve_api_file(filename)
+
+
+class CopilotSourceWeights(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fplcopilot: float = Field(..., ge=0.0, le=1.0)
+    airsenal: float = Field(..., ge=0.0, le=1.0)
+
+
+class CopilotBlendSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    correlation_id: str
+    source_weights: CopilotSourceWeights
+    task: Literal["hybrid"] = "hybrid"
+    force_refresh: bool = False
+
+    @model_validator(mode="after")
+    def validate_weights(self) -> "CopilotBlendSubmitRequest":
+        total = self.source_weights.fplcopilot + self.source_weights.airsenal
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError("source_weights must sum to 1.0")
+        return self
+
+
+class CopilotBlendSubmitAcceptedResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    correlation_id: str
+    job_id: str
+    status: Literal["queued"]
+
+
+class CopilotHybridCore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class CopilotTransferPlayerRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    player_id: int
+    player_name: str
+
+
+class CopilotRecommendedTransfer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transfer_id: str
+    out: CopilotTransferPlayerRef
+    in_: CopilotTransferPlayerRef = Field(..., alias="in")
+    reason: str
+    projected_points_delta: float
+
+
+class CopilotAskCopilotResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str
+    rationale: List[str]
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class CopilotDegradedMode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_degraded: bool
+    code: Optional[Literal["LLM_TIMEOUT", "SCHEMA_VALIDATION_FAILED", "PROVIDER_ERROR", "FALLBACK"]] = None
+    message: Optional[str] = None
+    fallback_used: bool = False
+
+
+class CopilotHybridResultPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    correlation_id: str
+    core: CopilotHybridCore
+    recommended_transfers: List[CopilotRecommendedTransfer]
+    ask_copilot: CopilotAskCopilotResponse
+    degraded_mode: CopilotDegradedMode
+
+
+class CopilotErrorField(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    message: str
+
+
+class CopilotErrorDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Literal[
+        "VALIDATION_ERROR",
+        "NOT_FOUND",
+        "JOB_FAILED",
+        "LLM_TIMEOUT",
+        "SCHEMA_VALIDATION_FAILED",
+    ]
+    message: str
+    retryable: bool = False
+    field_errors: List[CopilotErrorField] = Field(default_factory=list)
+
+
+class CopilotErrorResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    correlation_id: str
+    error: CopilotErrorDetail
+
+
+class CopilotBlendJobStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    correlation_id: str
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    result: Optional[CopilotHybridResultPayload] = None
+    error: Optional[CopilotErrorResponse] = None
+
+
+_copilot_job_service = None
+
+
+def _get_copilot_job_service():
+    global _copilot_job_service
+    if _copilot_job_service is None:
+        from src.services.copilot_job_service import CopilotJobService
+
+        db_path = os.environ.get("COPILOT_DB_PATH") or str(REPO_ROOT / "data" / "airsenal" / "data.db")
+        _copilot_job_service = CopilotJobService.from_dependencies(db_path=db_path)
+    return _copilot_job_service
+
+
+@app.post(
+    "/api/copilot/blend-jobs",
+    status_code=202,
+    response_model=CopilotBlendSubmitAcceptedResponse,
+    responses={400: {"model": CopilotErrorResponse}, 422: {"model": CopilotErrorResponse}},
+)
+def submit_copilot_blend_job(_: CopilotBlendSubmitRequest) -> CopilotBlendSubmitAcceptedResponse:
+    service = _get_copilot_job_service()
+    accepted = service.submit_job(_.model_dump(by_alias=True))
+    return CopilotBlendSubmitAcceptedResponse.model_validate(accepted)
+
+
+@app.get(
+    "/api/copilot/blend-jobs/{job_id}",
+    response_model=CopilotBlendJobStatusResponse,
+    responses={404: {"model": CopilotErrorResponse}},
+)
+def get_copilot_blend_job(job_id: str) -> CopilotBlendJobStatusResponse:
+    service = _get_copilot_job_service()
+    job = service.get_job_status(job_id)
+    if job is None:
+        error_body = CopilotErrorResponse(
+            schema_version="1.0",
+            correlation_id=job_id,
+            error=CopilotErrorDetail(
+                code="NOT_FOUND",
+                message=f"Job '{job_id}' not found",
+                retryable=False,
+                field_errors=[],
+            ),
+        )
+        return JSONResponse(status_code=404, content=error_body.model_dump(by_alias=True))
+
+    response_payload = {
+        "schema_version": job["schema_version"],
+        "correlation_id": job["correlation_id"],
+        "job_id": job["job_id"],
+        "status": job["status"],
+        "result": job.get("result_json"),
+        "error": job.get("error_json"),
+    }
+    return CopilotBlendJobStatusResponse.model_validate(response_payload)
 
 
 # ---------------------------------------------------------------------------
@@ -484,4 +721,3 @@ def elo_ratings(snapshot_date: Optional[str] = None) -> EloSnapshotResponse:
     if not snapshot["ratings"]:
         raise HTTPException(status_code=503, detail="ClubElo ratings unavailable")
     return EloSnapshotResponse.model_validate(snapshot)
-
