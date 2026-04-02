@@ -66,3 +66,18 @@ credentials.json
 # Ignore compiled C extensions
 *.so
 
+# AI Agent state directories
+.sisyphus/
+.agent/
+.opencode/
+.cursor/
+.claude/
+.aider*
+.continue/
+.roo/
+.codex/
+.kilocode/
+.windsurf/
+.agent-state/
+AGENTS.md
+
