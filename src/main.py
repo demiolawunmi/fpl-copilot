@@ -269,7 +269,7 @@ class CopilotDegradedMode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     is_degraded: bool
-    code: Optional[Literal["LLM_TIMEOUT", "SCHEMA_VALIDATION_FAILED", "PROVIDER_ERROR", "FALLBACK"]] = None
+    code: Optional[Literal["LLM_TIMEOUT", "JSON_PARSE_FAILED", "SCHEMA_VALIDATION_FAILED", "PROVIDER_ERROR", "FALLBACK"]] = None
     message: Optional[str] = None
     fallback_used: bool = False
 

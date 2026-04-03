@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -119,17 +122,26 @@ class CopilotGeminiAdapter:
         raise ValueError("Gemini response text is empty")
 
     def _extract_json(self, raw_text: str) -> str:
-        import re
-        stripped = raw_text.strip()
-        if stripped.startswith("{"):
-            return stripped
-        # Try markdown code blocks first (```json and plain ```)
         import json as _json
-        for pattern in [r'```json\s*\n(.*?)\n```', r'```\s*\n(.*?)\n```']:
+        import re
+
+        stripped = raw_text.strip()
+
+        # Fast-path: text starts with `{` — validate before returning
+        if stripped.startswith("{"):
+            try:
+                _json.loads(stripped)
+                return stripped
+            except _json.JSONDecodeError:
+                # Starts with `{` but is malformed/truncated — fall through to extraction
+                pass
+
+        # Try markdown code blocks (```json and plain ```)
+        # Handle both LF (\n) and CRLF (\r\n) line endings
+        for pattern in [r'```json\s*\r?\n(.*?)\r?\n```', r'```\s*\r?\n(.*?)\r?\n```']:
             match = re.search(pattern, raw_text, re.DOTALL)
             if match:
                 candidate = match.group(1).strip()
-                # If the candidate is valid JSON, return it. Otherwise fall through to brace counting.
                 try:
                     _json.loads(candidate)
                     return candidate
@@ -161,17 +173,86 @@ class CopilotGeminiAdapter:
             elif ch == '}':
                 depth -= 1
                 if depth == 0:
-                    return raw_text[start:i+1].strip()
+                    candidate = raw_text[start : i + 1].strip()
+                    # Validate extracted JSON — brace counting can produce malformed output
+                    try:
+                        _json.loads(candidate)
+                        return candidate
+                    except _json.JSONDecodeError as exc:
+                        raise ValueError(
+                            f"Malformed JSON extracted via brace counting: {exc}"
+                        ) from exc
 
+        # Never found a closing brace — truncated or unterminated response
         raise ValueError(f"Unterminated JSON in Gemini response: {raw_text[:200]}")
 
     def _invoke_model(self, prompt: str) -> str:
-        response = self.client.models.generate_content(
-            model=self.config.model_name,
-            contents=prompt,
-            config={
+        request = {
+            "model": self.config.model_name,
+            "contents": prompt,
+            "config": {
                 "temperature": 0.1,
                 "response_mime_type": "application/json",
+                "response_schema": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "core": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "summary": {"type": "STRING"},
+                                "confidence": {"type": "NUMBER"},
+                            },
+                            "required": ["summary", "confidence"],
+                        },
+                        "recommended_transfers": {
+                            "type": "ARRAY",
+                            "items": {
+                                "type": "OBJECT",
+                                "properties": {
+                                    "transfer_id": {"type": "STRING"},
+                                    "out": {
+                                        "type": "OBJECT",
+                                        "properties": {
+                                            "player_id": {"type": "INTEGER"},
+                                            "player_name": {"type": "STRING"},
+                                        },
+                                        "required": ["player_id", "player_name"],
+                                    },
+                                    "in": {
+                                        "type": "OBJECT",
+                                        "properties": {
+                                            "player_id": {"type": "INTEGER"},
+                                            "player_name": {"type": "STRING"},
+                                        },
+                                        "required": ["player_id", "player_name"],
+                                    },
+                                    "reason": {"type": "STRING"},
+                                    "projected_points_delta": {"type": "NUMBER"},
+                                },
+                                "required": [
+                                    "transfer_id",
+                                    "out",
+                                    "in",
+                                    "reason",
+                                    "projected_points_delta",
+                                ],
+                            },
+                        },
+                        "ask_copilot": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "answer": {"type": "STRING"},
+                                "rationale": {
+                                    "type": "ARRAY",
+                                    "items": {"type": "STRING"},
+                                },
+                                "confidence": {"type": "NUMBER"},
+                            },
+                            "required": ["answer", "rationale", "confidence"],
+                        },
+                    },
+                    "required": ["core", "recommended_transfers", "ask_copilot"],
+                },
                 "safety_settings": [
                     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
                     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
@@ -180,7 +261,13 @@ class CopilotGeminiAdapter:
                 ],
                 "max_output_tokens": 2048,
             },
-        )
+            "timeout": self.config.timeout_seconds,
+        }
+        try:
+            response = self.client.models.generate_content(**request)
+        except TypeError:
+            request.pop("timeout", None)
+            response = self.client.models.generate_content(**request)
         return self._extract_text(response)
 
     def _validate_hybrid_payload(
@@ -218,16 +305,32 @@ class CopilotGeminiAdapter:
     ) -> dict[str, Any]:
         from src.main import CopilotHybridResultPayload
 
+        summary_map = {
+            "JSON_PARSE_FAILED": "Model response could not be parsed. Serving constrained fallback guidance.",
+            "SCHEMA_VALIDATION_FAILED": "Model response did not match expected format. Serving constrained fallback guidance.",
+            "LLM_TIMEOUT": "Model response timed out. Serving constrained fallback guidance.",
+            "PROVIDER_ERROR": "Model provider encountered an error. Serving constrained fallback guidance.",
+        }
+        summary = summary_map.get(code, "Temporary model degradation. Serving constrained fallback guidance.")
+
+        answer_map = {
+            "JSON_PARSE_FAILED": "Model output could not be parsed. Retry shortly.",
+            "SCHEMA_VALIDATION_FAILED": "Model output format was invalid. Retry shortly.",
+            "LLM_TIMEOUT": "Model response timed out. Retry shortly.",
+            "PROVIDER_ERROR": "Model provider error. Retry shortly.",
+        }
+        answer = answer_map.get(code, "Model output unavailable. Retry shortly.")
+
         fallback = {
             "schema_version": schema_version,
             "correlation_id": correlation_id,
             "core": {
-                "summary": "Temporary model degradation. Serving constrained fallback guidance.",
+                "summary": summary,
                 "confidence": 0.0,
             },
             "recommended_transfers": [],
             "ask_copilot": {
-                "answer": "Model output unavailable. Retry shortly.",
+                "answer": answer,
                 "rationale": [message],
                 "confidence": 0.0,
             },
@@ -266,16 +369,76 @@ class CopilotGeminiAdapter:
                     correlation_id=correlation_id,
                 )
             except TimeoutError as exc:
+                logger.warning(
+                    "Gemini adapter failure",
+                    extra={
+                        "failure_class": "LLM_TIMEOUT",
+                        "correlation_id": correlation_id,
+                        "attempt": attempt_idx + 1,
+                        "max_attempts": attempts,
+                        "error_type": exc.__class__.__name__,
+                    },
+                )
                 degraded_code = "LLM_TIMEOUT"
                 last_error_message = f"Gemini timed out after {self.config.timeout_seconds}s"
                 if attempt_idx >= self.config.max_retries:
                     break
-            except (json.JSONDecodeError, ValidationError, ValueError) as exc:
+            except json.JSONDecodeError as exc:
+                logger.warning(
+                    "Gemini adapter failure",
+                    extra={
+                        "failure_class": "JSON_PARSE_FAILED",
+                        "correlation_id": correlation_id,
+                        "attempt": attempt_idx + 1,
+                        "max_attempts": attempts,
+                        "error_type": exc.__class__.__name__,
+                    },
+                )
                 degraded_code = "SCHEMA_VALIDATION_FAILED"
-                last_error_message = f"Gemini output validation failed: {exc}"
+                last_error_message = f"Gemini output could not be parsed as JSON: {exc}"
+                if attempt_idx >= self.config.max_retries:
+                    break
+            except ValidationError as exc:
+                logger.warning(
+                    "Gemini adapter failure",
+                    extra={
+                        "failure_class": "SCHEMA_VALIDATION_FAILED",
+                        "correlation_id": correlation_id,
+                        "attempt": attempt_idx + 1,
+                        "max_attempts": attempts,
+                        "error_type": exc.__class__.__name__,
+                    },
+                )
+                degraded_code = "SCHEMA_VALIDATION_FAILED"
+                last_error_message = f"Gemini output did not match expected schema: {exc}"
+                if attempt_idx >= self.config.max_retries:
+                    break
+            except ValueError as exc:
+                logger.warning(
+                    "Gemini adapter failure",
+                    extra={
+                        "failure_class": "JSON_PARSE_FAILED",
+                        "correlation_id": correlation_id,
+                        "attempt": attempt_idx + 1,
+                        "max_attempts": attempts,
+                        "error_type": exc.__class__.__name__,
+                    },
+                )
+                degraded_code = "SCHEMA_VALIDATION_FAILED"
+                last_error_message = f"Gemini output could not be parsed as JSON: {exc}"
                 if attempt_idx >= self.config.max_retries:
                     break
             except Exception as exc:
+                logger.warning(
+                    "Gemini adapter failure",
+                    extra={
+                        "failure_class": "PROVIDER_ERROR",
+                        "correlation_id": correlation_id,
+                        "attempt": attempt_idx + 1,
+                        "max_attempts": attempts,
+                        "error_type": exc.__class__.__name__,
+                    },
+                )
                 degraded_code = "PROVIDER_ERROR"
                 last_error_message = f"Gemini provider error: {exc}"
                 if attempt_idx >= self.config.max_retries:
