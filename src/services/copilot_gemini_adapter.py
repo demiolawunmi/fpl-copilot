@@ -133,7 +133,6 @@ class CopilotGeminiAdapter:
                 ],
                 "max_output_tokens": 2048,
             },
-            timeout=self.config.timeout_seconds,
         )
         return self._extract_text(response)
 
