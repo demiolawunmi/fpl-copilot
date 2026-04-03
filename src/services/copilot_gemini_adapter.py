@@ -118,6 +118,15 @@ class CopilotGeminiAdapter:
             return text
         raise ValueError("Gemini response text is empty")
 
+    def _extract_json(self, raw_text: str) -> str:
+        if raw_text.strip().startswith("{"):
+            return raw_text.strip()
+        import re
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if match:
+            return match.group(0)
+        raise ValueError(f"No JSON object found in Gemini response: {raw_text[:200]}")
+
     def _invoke_model(self, prompt: str) -> str:
         response = self.client.models.generate_content(
             model=self.config.model_name,
@@ -145,16 +154,11 @@ class CopilotGeminiAdapter:
     ) -> dict[str, Any]:
         from src.main import CopilotHybridResultPayload
 
-        transfers = parsed_json.get("recommended_transfers", [])
-        for t in transfers:
-            if "in" in t and "in_" not in t:
-                t["in_"] = t.pop("in")
-
         candidate = {
             "schema_version": schema_version,
             "correlation_id": correlation_id,
             "core": parsed_json.get("core"),
-            "recommended_transfers": transfers,
+            "recommended_transfers": parsed_json.get("recommended_transfers"),
             "ask_copilot": parsed_json.get("ask_copilot"),
             "degraded_mode": {
                 "is_degraded": False,
@@ -214,7 +218,8 @@ class CopilotGeminiAdapter:
         for attempt_idx in range(attempts):
             try:
                 raw_text = self._invoke_model(prompt)
-                parsed = json.loads(raw_text)
+                json_text = self._extract_json(raw_text)
+                parsed = json.loads(json_text)
                 if not isinstance(parsed, dict):
                     raise ValueError("Gemini response must be a JSON object")
                 return self._validate_hybrid_payload(

@@ -16,13 +16,12 @@ class _ModelsAPI:
         self._outcomes = outcomes
         self._call_log = call_log
 
-    def generate_content(self, *, model, contents, config, timeout):
+    def generate_content(self, *, model, contents, config):
         self._call_log.append(
             {
                 "model": model,
                 "contents": contents,
                 "config": config,
-                "timeout": timeout,
             }
         )
         outcome = self._outcomes.pop(0)
@@ -88,7 +87,6 @@ def test_success_with_valid_gemini_response() -> None:
     assert result["degraded_mode"]["is_degraded"] is False
     assert result["recommended_transfers"][0]["in"]["player_id"] == 22
     assert call_log[0]["model"] == "gemini-2.5-flash"
-    assert call_log[0]["timeout"] == 25
     assert call_log[0]["config"]["response_mime_type"] == "application/json"
 
 
