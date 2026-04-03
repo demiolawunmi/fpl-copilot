@@ -145,11 +145,16 @@ class CopilotGeminiAdapter:
     ) -> dict[str, Any]:
         from src.main import CopilotHybridResultPayload
 
+        transfers = parsed_json.get("recommended_transfers", [])
+        for t in transfers:
+            if "in" in t and "in_" not in t:
+                t["in_"] = t.pop("in")
+
         candidate = {
             "schema_version": schema_version,
             "correlation_id": correlation_id,
             "core": parsed_json.get("core"),
-            "recommended_transfers": parsed_json.get("recommended_transfers"),
+            "recommended_transfers": transfers,
             "ask_copilot": parsed_json.get("ask_copilot"),
             "degraded_mode": {
                 "is_degraded": False,
