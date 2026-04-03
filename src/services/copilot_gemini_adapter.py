@@ -119,13 +119,51 @@ class CopilotGeminiAdapter:
         raise ValueError("Gemini response text is empty")
 
     def _extract_json(self, raw_text: str) -> str:
-        if raw_text.strip().startswith("{"):
-            return raw_text.strip()
         import re
-        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-        if match:
-            return match.group(0)
-        raise ValueError(f"No JSON object found in Gemini response: {raw_text[:200]}")
+        stripped = raw_text.strip()
+        if stripped.startswith("{"):
+            return stripped
+        # Try markdown code blocks first (```json and plain ```)
+        import json as _json
+        for pattern in [r'```json\s*\n(.*?)\n```', r'```\s*\n(.*?)\n```']:
+            match = re.search(pattern, raw_text, re.DOTALL)
+            if match:
+                candidate = match.group(1).strip()
+                # If the candidate is valid JSON, return it. Otherwise fall through to brace counting.
+                try:
+                    _json.loads(candidate)
+                    return candidate
+                except _json.JSONDecodeError:
+                    pass
+
+        # Fallback: find outermost JSON object using brace counting
+        start = raw_text.find('{')
+        if start == -1:
+            raise ValueError(f"No JSON object found in Gemini response: {raw_text[:200]}")
+
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i, ch in enumerate(raw_text[start:], start):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\':
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return raw_text[start:i+1].strip()
+
+        raise ValueError(f"Unterminated JSON in Gemini response: {raw_text[:200]}")
 
     def _invoke_model(self, prompt: str) -> str:
         response = self.client.models.generate_content(

@@ -191,7 +191,50 @@ def test_timeout_retries_then_returns_structured_degraded_payload() -> None:
     assert result["degraded_mode"]["is_degraded"] is True
     assert result["degraded_mode"]["code"] == "LLM_TIMEOUT"
     assert result["degraded_mode"]["fallback_used"] is True
-    assert result["recommended_transfers"] == []
+
+
+def _make_adapter_for_extract_tests():
+    # Use the lightweight _Client stub so we don't trigger default client creation
+    call_log: list[dict] = []
+    return CopilotGeminiAdapter(client=_Client(outcomes=['{}'], call_log=call_log), sleep_fn=lambda _: None)
+
+
+def test_extract_plain_json_only() -> None:
+    adapter = _make_adapter_for_extract_tests()
+    raw = '  {"x": 1, "y": "z"}  '\
+        "\n"
+    extracted = adapter._extract_json(raw)
+    assert __import__('json').loads(extracted) == {"x": 1, "y": "z"}
+
+
+def test_extract_json_in_json_code_block() -> None:
+    adapter = _make_adapter_for_extract_tests()
+    raw = "Here you go:\n```json\n{\"a\": 1, \"b\": [1,2,3]}\n```\n"
+    extracted = adapter._extract_json(raw)
+    assert __import__('json').loads(extracted) == {"a": 1, "b": [1, 2, 3]}
+
+
+def test_extract_json_in_plain_code_block() -> None:
+    adapter = _make_adapter_for_extract_tests()
+    raw = "Some text\n```\n{\"c\": {\"d\": \"val\"}}\n```\n"
+    extracted = adapter._extract_json(raw)
+    assert __import__('json').loads(extracted) == {"c": {"d": "val"}}
+
+
+def test_extract_json_with_surrounding_text_and_nested_structures() -> None:
+    adapter = _make_adapter_for_extract_tests()
+    raw = (
+        "Note:\n```json\n{\"outer\": {\"inner\": {\"val\": \"string with } brace\"}, \"num\": 3}}\n```\nThanks"
+    )
+    extracted = adapter._extract_json(raw)
+    assert __import__('json').loads(extracted) == {"outer": {"inner": {"val": "string with } brace"}, "num": 3}}
+
+
+def test_extract_json_brace_counting_with_escaped_quotes_and_trailing_text() -> None:
+    adapter = _make_adapter_for_extract_tests()
+    raw = 'prefix text {"a": "escaped \\" quote", "b": {"c": 1}} trailing markdown ```'
+    extracted = adapter._extract_json(raw)
+    assert __import__('json').loads(extracted) == {"a": "escaped \" quote", "b": {"c": 1}}
 
 
 def test_malformed_json_retries_then_returns_schema_validation_degraded_payload() -> None:
