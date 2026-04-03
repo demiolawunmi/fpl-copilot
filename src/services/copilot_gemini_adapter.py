@@ -40,10 +40,60 @@ class CopilotGeminiAdapter:
         return genai.Client(api_key=api_key)
 
     def _build_prompt(self, model_context: dict[str, Any]) -> str:
+        weights = model_context.get("weights", {})
+        elo_weight = weights.get("elo", 0.0)
+        airsenal_weight = weights.get("airsenal", 0.0)
+        blended_players = model_context.get("blended_players", [])
+
+        player_summaries = []
+        for p in blended_players[:15]:
+            player_summaries.append(
+                f"- {p['player_name']} ({p['team']}, {p['position']}): "
+                f"ELO={p['elo_score']:.1f}, AIrsenal={p['airsenal_predicted_points']:.1f}"
+            )
+        players_text = "\n".join(player_summaries) if player_summaries else "(no player data available)"
+
+        weight_instruction = ""
+        if elo_weight > 0 and airsenal_weight > 0:
+            elo_pct = int(round(elo_weight * 100))
+            airsenal_pct = int(round(airsenal_weight * 100))
+            weight_instruction = (
+                f"WEIGHTING: ELO scores are weighted at {elo_pct}%, AIrsenal predictions at {airsenal_pct}%. "
+                f"Prioritize players who score well on BOTH metrics. "
+                f"A player with high ELO but low AIrsenal prediction may be overvalued by team strength alone. "
+                f"A player with high AIrsenal but low ELO may be in a weak team but have favorable fixtures."
+            )
+        elif elo_weight > 0:
+            weight_instruction = (
+                "WEIGHTING: ELO scores are the sole signal (100%). "
+                "Focus on players from strong teams in favorable positions."
+            )
+        elif airsenal_weight > 0:
+            weight_instruction = (
+                "WEIGHTING: AIrsenal predictions are the sole signal (100%). "
+                "Focus on players with the highest projected points."
+            )
+
         context_json = json.dumps(model_context, separators=(",", ":"), sort_keys=True)
         return (
             "ROLE: You are a football analytics assistant for FPL Copilot. "
-            "You must only use the provided context and never fabricate hidden sources.\n"
+            "You must only use the provided context and never fabricate hidden sources.\n\n"
+            "DATA SOURCES:\n"
+            "1. ELO SCORES — measure team strength adjusted for player position. "
+            "Higher ELO = player benefits from stronger team context.\n"
+            "2. AIRSENAL PREDICTIONS — ML-projected points for the upcoming gameweek. "
+            "Higher = more expected FPL points.\n\n"
+            f"{weight_instruction}\n\n"
+            "TOP PLAYERS (ELO + AIrsenal):\n"
+            f"{players_text}\n\n"
+            "TASKS:\n"
+            "1. RECOMMEND TRANSFERS: Identify players to transfer IN and OUT. "
+            "For each transfer, explain WHY referencing BOTH ELO scores and AIrsenal predictions. "
+            "Example: 'Transfer IN Haaland — ELO 1850 (strongest team context) + AIrsenal 11.0 pts (highest projection).'\n"
+            "2. CAPTAIN PICK: Recommend a captain based on the blended assessment of ELO and AIrsenal. "
+            "The ideal captain combines high team strength (ELO) with high projected output (AIrsenal).\n"
+            "3. EXPLAIN REASONING: Every recommendation must include a clear 'reason' field "
+            "that references specific ELO scores and/or AIrsenal predictions from the data.\n\n"
             "OUTPUT POLICY: Return exactly one strict JSON object conforming to this schema and no markdown/text.\n"
             "{\n"
             '  "core": {"summary": "string", "confidence": 0.0},\n'
@@ -52,7 +102,7 @@ class CopilotGeminiAdapter:
             '      "transfer_id": "string",\n'
             '      "out": {"player_id": 0, "player_name": "string"},\n'
             '      "in": {"player_id": 0, "player_name": "string"},\n'
-            '      "reason": "string",\n'
+            '      "reason": "string (must reference ELO and/or AIrsenal data)",\n'
             '      "projected_points_delta": 0.0\n'
             "    }\n"
             "  ],\n"
