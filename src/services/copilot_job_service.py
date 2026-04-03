@@ -5,7 +5,8 @@ import json
 from typing import Any, Mapping, Protocol
 from uuid import uuid4
 
-from src.services.copilot_blend_sql import CopilotSqlBlendAssembler
+from src.services.copilot_blend_fallback import CopilotBlendFallback
+from src.services.copilot_elo_llm_assembler import CopilotEloLlmAssembler
 from src.services.copilot_gemini_adapter import CopilotGeminiAdapter
 from src.services.copilot_job_repository import CopilotJobRepository
 
@@ -16,7 +17,7 @@ class _BlendAssembler(Protocol):
         *,
         source_weights: Mapping[str, float],
         player_name_contains: str | None = None,
-        limit: int = 25,
+        gameweek: int | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -43,10 +44,12 @@ class CopilotJobService:
         repository: CopilotJobRepository,
         assembler: _BlendAssembler,
         gemini_adapter: _GeminiAdapter,
+        fallback: CopilotBlendFallback | None = None,
     ) -> None:
         self.repository = repository
         self.assembler = assembler
         self.gemini_adapter = gemini_adapter
+        self.fallback = fallback or CopilotBlendFallback()
 
     @classmethod
     def from_dependencies(
@@ -54,16 +57,18 @@ class CopilotJobService:
         *,
         db_path: str,
         repository: CopilotJobRepository | None = None,
-        assembler: CopilotSqlBlendAssembler | None = None,
+        assembler: CopilotEloLlmAssembler | None = None,
         gemini_adapter: CopilotGeminiAdapter | None = None,
+        fallback: CopilotBlendFallback | None = None,
     ) -> "CopilotJobService":
         job_repository = repository or CopilotJobRepository(db_path)
-        blend_assembler = assembler or CopilotSqlBlendAssembler(db_path)
+        blend_assembler = assembler or CopilotEloLlmAssembler(db_path)
         adapter = gemini_adapter or CopilotGeminiAdapter()
         return cls(
             repository=job_repository,
             assembler=blend_assembler,
             gemini_adapter=adapter,
+            fallback=fallback,
         )
 
     def submit_job(
@@ -123,15 +128,17 @@ class CopilotJobService:
         job_id = str(job["job_id"])
         payload = job["input_json"] or {}
 
+        model_context: dict[str, Any] | None = None
+
         try:
             source_weights = payload["source_weights"]
             player_name_contains = payload.get("player_name_contains")
-            limit = int(payload.get("limit", 25))
+            gameweek = payload.get("gameweek")
 
             model_context = self.assembler.assemble_model_context(
                 source_weights=source_weights,
                 player_name_contains=player_name_contains,
-                limit=limit,
+                gameweek=gameweek,
             )
 
             hybrid_payload = self.gemini_adapter.generate_hybrid_payload(
@@ -146,6 +153,22 @@ class CopilotJobService:
                 result_payload=hybrid_payload,
             )
         except Exception as exc:
+            if model_context is not None:
+                try:
+                    hybrid_payload = self.fallback.build_fallback_payload(
+                        schema_version=str(job["schema_version"]),
+                        correlation_id=str(job["correlation_id"]),
+                        model_context=model_context,
+                    )
+                    self.repository.update_job_status(
+                        job_id=job_id,
+                        new_status="completed",
+                        result_payload=hybrid_payload,
+                    )
+                    return self.get_job_status(job_id)
+                except Exception:
+                    pass
+
             self.repository.update_job_status(
                 job_id=job_id,
                 new_status="failed",

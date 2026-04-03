@@ -203,7 +203,7 @@ def files(name: str):
 class CopilotSourceWeights(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    fplcopilot: float = Field(..., ge=0.0, le=1.0)
+    elo: float = Field(..., ge=0.0, le=1.0)
     airsenal: float = Field(..., ge=0.0, le=1.0)
 
 
@@ -218,7 +218,7 @@ class CopilotBlendSubmitRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_weights(self) -> "CopilotBlendSubmitRequest":
-        total = self.source_weights.fplcopilot + self.source_weights.airsenal
+        total = self.source_weights.elo + self.source_weights.airsenal
         if abs(total - 1.0) > 1e-9:
             raise ValueError("source_weights must sum to 1.0")
         return self
@@ -335,7 +335,9 @@ def _get_copilot_job_service():
         from src.services.copilot_job_service import CopilotJobService
 
         db_path = os.environ.get("COPILOT_DB_PATH") or str(REPO_ROOT / "data" / "airsenal" / "data.db")
-        _copilot_job_service = CopilotJobService.from_dependencies(db_path=db_path)
+        _copilot_job_service = CopilotJobService.from_dependencies(
+            db_path=db_path,
+        )
     return _copilot_job_service
 
 

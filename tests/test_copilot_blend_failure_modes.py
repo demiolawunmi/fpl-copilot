@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 import sys
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from src.services.copilot_blend_sql import CopilotSqlBlendAssembler
+from unittest.mock import MagicMock, patch
+
+from src.services.copilot_elo_llm_assembler import CopilotEloLlmAssembler
 from src.services.copilot_gemini_adapter import CopilotGeminiAdapter
 from src.services.copilot_job_repository import CopilotJobRepository
 from src.services.copilot_job_service import CopilotJobService
@@ -40,32 +41,16 @@ class _AdapterRaises:
         raise RuntimeError("provider hard failure")
 
 
-def _seed_blend_db(db_path: Path) -> None:
-    con = sqlite3.connect(db_path)
-    con.execute(
-        """
-        CREATE TABLE copilot_source_player_scores (
-            source TEXT NOT NULL,
-            player_id INTEGER NOT NULL,
-            player_name TEXT NOT NULL,
-            projected_points REAL NOT NULL
-        );
-        """
-    )
-    con.executemany(
-        """
-        INSERT INTO copilot_source_player_scores (source, player_id, player_name, projected_points)
-        VALUES (?, ?, ?, ?);
-        """,
-        [
-            ("fplcopilot", 101, "Saka", 10.0),
-            ("airsenal", 101, "Saka", 8.0),
-            ("fplcopilot", 202, "Haaland", 9.0),
-            ("airsenal", 202, "Haaland", 11.0),
+def _make_model_context():
+    return {
+        "schema_version": "1.0",
+        "weights": {"elo": 0.6, "airsenal": 0.4},
+        "sources": ["elo", "airsenal"],
+        "blended_players": [
+            {"player_id": 101, "player_name": "Saka", "team": "ARS", "position": "MID", "elo_score": 1650.0, "airsenal_predicted_points": 8.0},
+            {"player_id": 202, "player_name": "Haaland", "team": "MCI", "position": "FWD", "elo_score": 1850.5, "airsenal_predicted_points": 11.0},
         ],
-    )
-    con.commit()
-    con.close()
+    }
 
 
 def _submit(service: CopilotJobService, correlation_id: str) -> str:
@@ -74,20 +59,16 @@ def _submit(service: CopilotJobService, correlation_id: str) -> str:
             "schema_version": "1.0",
             "correlation_id": correlation_id,
             "task": "hybrid",
-            "source_weights": {"fplcopilot": 0.6, "airsenal": 0.4},
-            "player_name_contains": None,
-            "limit": 25,
+            "source_weights": {"elo": 0.6, "airsenal": 0.4},
         }
     )
     return accepted["job_id"]
 
 
 def test_happy_path_provider_response_never_uses_degraded_fallback(tmp_path: Path) -> None:
-    db_path = tmp_path / "blend.db"
-    _seed_blend_db(db_path)
-
-    repo = CopilotJobRepository(db_path)
-    assembler = CopilotSqlBlendAssembler(db_path)
+    repo = CopilotJobRepository(tmp_path / "jobs.db")
+    assembler = MagicMock(spec=CopilotEloLlmAssembler)
+    assembler.assemble_model_context.return_value = _make_model_context()
     adapter = CopilotGeminiAdapter(
         client=_Client(
             outcomes=[
@@ -111,11 +92,9 @@ def test_happy_path_provider_response_never_uses_degraded_fallback(tmp_path: Pat
 
 
 def test_timeout_returns_completed_with_structured_llm_timeout_degraded_payload(tmp_path: Path) -> None:
-    db_path = tmp_path / "blend.db"
-    _seed_blend_db(db_path)
-
-    repo = CopilotJobRepository(db_path)
-    assembler = CopilotSqlBlendAssembler(db_path)
+    repo = CopilotJobRepository(tmp_path / "jobs.db")
+    assembler = MagicMock(spec=CopilotEloLlmAssembler)
+    assembler.assemble_model_context.return_value = _make_model_context()
     adapter = CopilotGeminiAdapter(
         client=_Client(
             outcomes=[TimeoutError("timeout-1"), TimeoutError("timeout-2"), TimeoutError("timeout-3")]
@@ -136,11 +115,9 @@ def test_timeout_returns_completed_with_structured_llm_timeout_degraded_payload(
 
 
 def test_malformed_output_returns_completed_with_schema_validation_failed_degraded_payload(tmp_path: Path) -> None:
-    db_path = tmp_path / "blend.db"
-    _seed_blend_db(db_path)
-
-    repo = CopilotJobRepository(db_path)
-    assembler = CopilotSqlBlendAssembler(db_path)
+    repo = CopilotJobRepository(tmp_path / "jobs.db")
+    assembler = MagicMock(spec=CopilotEloLlmAssembler)
+    assembler.assemble_model_context.return_value = _make_model_context()
     adapter = CopilotGeminiAdapter(
         client=_Client(outcomes=["not-json", "still-not-json", "[]"]),
         sleep_fn=lambda _: None,
@@ -159,12 +136,12 @@ def test_malformed_output_returns_completed_with_schema_validation_failed_degrad
 
 
 def test_unhandled_provider_failure_marks_job_failed_with_structured_error_payload(tmp_path: Path) -> None:
-    db_path = tmp_path / "blend.db"
-    _seed_blend_db(db_path)
-
-    repo = CopilotJobRepository(db_path)
-    assembler = CopilotSqlBlendAssembler(db_path)
-    service = CopilotJobService(repository=repo, assembler=assembler, gemini_adapter=_AdapterRaises())
+    repo = CopilotJobRepository(tmp_path / "jobs.db")
+    assembler = MagicMock(spec=CopilotEloLlmAssembler)
+    assembler.assemble_model_context.return_value = _make_model_context()
+    fallback = MagicMock()
+    fallback.build_fallback_payload.side_effect = RuntimeError("Fallback also broken")
+    service = CopilotJobService(repository=repo, assembler=assembler, gemini_adapter=_AdapterRaises(), fallback=fallback)
 
     _submit(service, "corr-failed")
     finished = service.execute_next_queued_job()
@@ -176,24 +153,21 @@ def test_unhandled_provider_failure_marks_job_failed_with_structured_error_paylo
     assert "provider hard failure" in finished["error_json"]["error"]["message"]
 
 
-def test_sql_malicious_filter_input_cannot_break_or_mutate_query_state(tmp_path: Path) -> None:
-    db_path = tmp_path / "blend.db"
-    _seed_blend_db(db_path)
+def test_assembler_failure_cannot_be_recovered_by_fallback(tmp_path: Path) -> None:
+    repo = CopilotJobRepository(tmp_path / "jobs.db")
+    assembler = MagicMock(spec=CopilotEloLlmAssembler)
+    assembler.assemble_model_context.side_effect = RuntimeError("Database connection lost")
 
-    assembler = CopilotSqlBlendAssembler(db_path)
-    malicious = "x'); DROP TABLE copilot_source_player_scores; --"
+    class _StubGeminiAdapter:
+        def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
+            return {"schema_version": schema_version, "correlation_id": correlation_id, "core": {"summary": "ok", "confidence": 0.5}, "recommended_transfers": [], "ask_copilot": {"answer": "ok", "rationale": [], "confidence": 0.5}, "degraded_mode": {"is_degraded": False, "code": None, "message": None, "fallback_used": False}}
 
-    context = assembler.assemble_model_context(
-        source_weights={"fplcopilot": 0.6, "airsenal": 0.4},
-        player_name_contains=malicious,
-        limit=10,
-    )
+    service = CopilotJobService(repository=repo, assembler=assembler, gemini_adapter=_StubGeminiAdapter())
 
-    assert context["blended_players"] == []
+    _submit(service, "corr-assembler-fail")
+    finished = service.execute_next_queued_job()
 
-    con = sqlite3.connect(db_path)
-    count_row = con.execute("SELECT COUNT(*) FROM copilot_source_player_scores;").fetchone()
-    con.close()
-
-    assert count_row is not None
-    assert count_row[0] == 4
+    assert finished is not None
+    assert finished["status"] == "failed"
+    assert finished["result_json"] is None
+    assert finished["error_json"]["error"]["code"] == "JOB_FAILED"

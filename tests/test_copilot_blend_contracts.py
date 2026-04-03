@@ -18,7 +18,7 @@ def test_submit_contract_accepts_valid_payload() -> None:
     payload = {
         "schema_version": "1.0",
         "correlation_id": "corr-123",
-        "source_weights": {"fplcopilot": 0.6, "airsenal": 0.4},
+        "source_weights": {"elo": 0.6, "airsenal": 0.4},
         "task": "hybrid",
         "force_refresh": False,
     }
@@ -27,7 +27,7 @@ def test_submit_contract_accepts_valid_payload() -> None:
 
     assert model.schema_version == "1.0"
     assert model.correlation_id == "corr-123"
-    assert model.source_weights.fplcopilot == pytest.approx(0.6)
+    assert model.source_weights.elo == pytest.approx(0.6)
     assert model.source_weights.airsenal == pytest.approx(0.4)
 
 
@@ -35,7 +35,7 @@ def test_submit_contract_rejects_invalid_weights_sum() -> None:
     payload = {
         "schema_version": "1.0",
         "correlation_id": "corr-123",
-        "source_weights": {"fplcopilot": 0.7, "airsenal": 0.4},
+        "source_weights": {"elo": 0.7, "airsenal": 0.4},
         "task": "hybrid",
     }
 
@@ -124,7 +124,7 @@ def test_invalid_submit_payload_is_rejected_by_fastapi_validation() -> None:
         json={
             "schema_version": "1.0",
             "correlation_id": "corr-123",
-            "source_weights": {"fplcopilot": 0.2, "airsenal": 0.2},
+            "source_weights": {"elo": 0.2, "airsenal": 0.2},
             "task": "hybrid",
         },
     )
