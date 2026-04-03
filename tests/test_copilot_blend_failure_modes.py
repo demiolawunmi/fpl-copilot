@@ -181,7 +181,7 @@ def test_fallback_raises_marks_job_failed_and_error_payload_contains_original_pr
 
     class _GeminiRaises:
         def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
-            raise RuntimeError("GEMINI_API_KEY is not configured")
+            raise RuntimeError("LLM provider key is not configured")
 
     fallback = MagicMock()
     fallback.build_fallback_payload.side_effect = RuntimeError("Fallback also broken")
@@ -195,4 +195,4 @@ def test_fallback_raises_marks_job_failed_and_error_payload_contains_original_pr
     assert finished["status"] == "failed"
     assert finished["result_json"] is None
     assert finished["error_json"]["error"]["code"] == "JOB_FAILED"
-    assert "GEMINI_API_KEY is not configured" in finished["error_json"]["error"]["message"]
+    assert "LLM provider key is not configured" in finished["error_json"]["error"]["message"]

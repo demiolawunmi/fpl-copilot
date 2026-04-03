@@ -58,7 +58,7 @@ class _StubGeminiAdapter:
 
 class _FailingGeminiAdapter:
     def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
-        raise RuntimeError("GEMINI_API_KEY is required for Gemini adapter")
+        raise RuntimeError("LLM provider key is required for selected adapter")
 
 
 def _make_model_context():

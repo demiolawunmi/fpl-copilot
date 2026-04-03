@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from typing import Any, Mapping, Protocol
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from src.services.copilot_blend_fallback import CopilotBlendFallback
 from src.services.copilot_elo_llm_assembler import CopilotEloLlmAssembler
 from src.services.copilot_gemini_adapter import CopilotGeminiAdapter
 from src.services.copilot_job_repository import CopilotJobRepository
+from src.services.copilot_openrouter_adapter import CopilotOpenRouterAdapter
 
 
 class _BlendAssembler(Protocol):
@@ -22,7 +24,7 @@ class _BlendAssembler(Protocol):
         ...
 
 
-class _GeminiAdapter(Protocol):
+class _LlmAdapter(Protocol):
     def generate_hybrid_payload(
         self,
         *,
@@ -43,7 +45,7 @@ class CopilotJobService:
         *,
         repository: CopilotJobRepository,
         assembler: _BlendAssembler,
-        gemini_adapter: _GeminiAdapter,
+        gemini_adapter: _LlmAdapter,
         fallback: CopilotBlendFallback | None = None,
     ) -> None:
         self.repository = repository
@@ -58,12 +60,22 @@ class CopilotJobService:
         db_path: str,
         repository: CopilotJobRepository | None = None,
         assembler: CopilotEloLlmAssembler | None = None,
-        gemini_adapter: CopilotGeminiAdapter | None = None,
+        gemini_adapter: _LlmAdapter | None = None,
         fallback: CopilotBlendFallback | None = None,
     ) -> "CopilotJobService":
         job_repository = repository or CopilotJobRepository(db_path)
         blend_assembler = assembler or CopilotEloLlmAssembler(db_path)
-        adapter = gemini_adapter or CopilotGeminiAdapter()
+        adapter = gemini_adapter
+        if adapter is None:
+            provider = os.environ.get("LLM_PROVIDER", "gemini").strip().lower()
+            if provider == "gemini":
+                adapter = CopilotGeminiAdapter()
+            elif provider == "openrouter":
+                adapter = CopilotOpenRouterAdapter()
+            else:
+                raise ValueError(
+                    "Unsupported LLM_PROVIDER. Expected 'gemini' or 'openrouter'."
+                )
         return cls(
             repository=job_repository,
             assembler=blend_assembler,

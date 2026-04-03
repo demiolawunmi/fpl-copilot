@@ -209,7 +209,7 @@ class _StubGeminiFails:
     """Gemini adapter that always raises, triggering fallback."""
 
     def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
-        raise RuntimeError("GEMINI_API_KEY is not configured")
+        raise RuntimeError("LLM provider key is not configured")
 
 
 def test_e2e_fallback_path_gemini_fails(tmp_path, monkeypatch):

@@ -81,6 +81,39 @@ def _service(tmp_path: Path, adapter, fallback=None) -> CopilotJobService:
     return CopilotJobService(repository=repo, assembler=_AssemblerOk(), gemini_adapter=adapter, fallback=fb)
 
 
+def test_from_dependencies_selects_openrouter_provider(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+
+    class _StubOpenRouterAdapter:
+        def __init__(self):
+            pass
+
+        def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
+            return {
+                "schema_version": schema_version,
+                "correlation_id": correlation_id,
+                "core": {"summary": "ok", "confidence": 0.5},
+                "recommended_transfers": [],
+                "ask_copilot": {"answer": "ok", "rationale": [], "confidence": 0.5},
+                "degraded_mode": {
+                    "is_degraded": False,
+                    "code": None,
+                    "message": None,
+                    "fallback_used": False,
+                },
+            }
+
+    from src.services import copilot_job_service as mod
+
+    original = mod.CopilotOpenRouterAdapter
+    mod.CopilotOpenRouterAdapter = _StubOpenRouterAdapter
+    try:
+        service = CopilotJobService.from_dependencies(db_path=str(tmp_path / "jobs.db"))
+        assert service.gemini_adapter.__class__.__name__ == "_StubOpenRouterAdapter"
+    finally:
+        mod.CopilotOpenRouterAdapter = original
+
+
 def test_happy_path_submit_execute_and_complete(tmp_path: Path) -> None:
     service = _service(tmp_path, _AdapterOk())
 
