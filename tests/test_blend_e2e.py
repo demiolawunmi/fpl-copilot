@@ -386,3 +386,70 @@ def test_e2e_unknown_job_returns_404(tmp_path, monkeypatch):
     body = response.json()
     assert body["error"]["code"] == "NOT_FOUND"
     assert "not found" in body["error"]["message"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Scenario 7: Timeout path — Gemini times out → adapter returns degraded → job completes with LLM_TIMEOUT
+# ---------------------------------------------------------------------------
+class _StubGeminiTimeout:
+    """Gemini adapter that simulates timeout → returns structured degraded payload."""
+
+    def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
+        return {
+            "schema_version": schema_version,
+            "correlation_id": correlation_id,
+            "core": {"summary": "Model response timed out. Serving constrained fallback guidance.", "confidence": 0.0},
+            "recommended_transfers": [],
+            "ask_copilot": {
+                "answer": "Model response timed out. Retry shortly.",
+                "rationale": ["Gemini timed out after 25s"],
+                "confidence": 0.0,
+            },
+            "degraded_mode": {
+                "is_degraded": True,
+                "code": "LLM_TIMEOUT",
+                "message": "Gemini timed out after 25s",
+                "fallback_used": True,
+            },
+        }
+
+
+def test_e2e_llm_timeout_triggers_fallback_and_backoff(tmp_path, monkeypatch):
+    """Submit blend job → Gemini times out → adapter returns degraded payload → job completes with LLM_TIMEOUT."""
+    monkeypatch.setattr(main_module, "_copilot_job_service", None)
+    service = _make_service(tmp_path, _StubGeminiTimeout())
+    monkeypatch.setattr(main_module, "_get_copilot_job_service", lambda: service)
+
+    client = TestClient(app)
+    worker_thread, shutdown_event = _start_worker()
+
+    try:
+        response = client.post(
+            "/api/copilot/blend-jobs",
+            json={
+                "schema_version": "1.0",
+                "correlation_id": "e2e-timeout",
+                "source_weights": {"elo": 0.5, "airsenal": 0.5},
+                "task": "hybrid",
+                "force_refresh": True,
+            },
+        )
+        assert response.status_code == 202
+        job_id = response.json()["job_id"]
+
+        job = _poll_until_terminal(client, job_id)
+
+        assert job["status"] == "completed"
+        assert job["result"] is not None
+        assert job["error"] is None
+
+        result = job["result"]
+        assert result["degraded_mode"]["is_degraded"] is True
+        assert result["degraded_mode"]["code"] == "LLM_TIMEOUT"
+        assert result["degraded_mode"]["fallback_used"] is True
+        assert result["core"]["confidence"] == 0.0
+        assert result["ask_copilot"]["confidence"] == 0.0
+
+    finally:
+        shutdown_event.set()
+        worker_thread.join(timeout=5)

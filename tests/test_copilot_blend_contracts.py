@@ -146,3 +146,38 @@ def test_openapi_exposes_copilot_contract_schemas() -> None:
     assert submit_ref.endswith("/CopilotBlendSubmitRequest")
     assert status_ref.endswith("/CopilotBlendJobStatusResponse")
     assert hybrid_ref.endswith("/CopilotHybridResultPayload")
+
+
+def test_degraded_mode_code_none_when_not_degraded() -> None:
+    """When is_degraded is False, code must be None."""
+    payload = {
+        "schema_version": "1.0",
+        "correlation_id": "corr-789",
+        "core": {"summary": "All good", "confidence": 0.9},
+        "recommended_transfers": [],
+        "ask_copilot": {"answer": "Hold", "rationale": ["No edge"], "confidence": 0.9},
+        "degraded_mode": {"is_degraded": False, "code": None, "fallback_used": False},
+    }
+
+    model = CopilotHybridResultPayload.model_validate(payload)
+    assert model.degraded_mode.is_degraded is False
+    assert model.degraded_mode.code is None
+    assert model.degraded_mode.fallback_used is False
+
+
+def test_degraded_payload_schema_defaults_for_missing_optional_fields() -> None:
+    """Degraded payload with minimal degraded_mode fields validates correctly."""
+    payload = {
+        "schema_version": "1.0",
+        "correlation_id": "corr-degraded",
+        "core": {"summary": "Degraded", "confidence": 0.0},
+        "recommended_transfers": [],
+        "ask_copilot": {"answer": "Retry", "rationale": ["Error"], "confidence": 0.0},
+        "degraded_mode": {"is_degraded": True, "code": "FALLBACK", "fallback_used": True},
+    }
+
+    model = CopilotHybridResultPayload.model_validate(payload)
+    assert model.degraded_mode.is_degraded is True
+    assert model.degraded_mode.code == "FALLBACK"
+    assert model.degraded_mode.fallback_used is True
+    assert model.degraded_mode.message is None

@@ -171,3 +171,28 @@ def test_assembler_failure_cannot_be_recovered_by_fallback(tmp_path: Path) -> No
     assert finished["status"] == "failed"
     assert finished["result_json"] is None
     assert finished["error_json"]["error"]["code"] == "JOB_FAILED"
+
+
+def test_fallback_raises_marks_job_failed_and_error_payload_contains_original_provider_message(tmp_path: Path) -> None:
+    """When Gemini fails and fallback also raises, job is failed with JOB_FAILED and original message preserved."""
+    repo = CopilotJobRepository(tmp_path / "jobs.db")
+    assembler = MagicMock(spec=CopilotEloLlmAssembler)
+    assembler.assemble_model_context.return_value = _make_model_context()
+
+    class _GeminiRaises:
+        def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
+            raise RuntimeError("GEMINI_API_KEY is not configured")
+
+    fallback = MagicMock()
+    fallback.build_fallback_payload.side_effect = RuntimeError("Fallback also broken")
+
+    service = CopilotJobService(repository=repo, assembler=assembler, gemini_adapter=_GeminiRaises(), fallback=fallback)
+
+    _submit(service, "corr-fallback-also-fails")
+    finished = service.execute_next_queued_job()
+
+    assert finished is not None
+    assert finished["status"] == "failed"
+    assert finished["result_json"] is None
+    assert finished["error_json"]["error"]["code"] == "JOB_FAILED"
+    assert "GEMINI_API_KEY is not configured" in finished["error_json"]["error"]["message"]
