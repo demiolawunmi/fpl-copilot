@@ -19,11 +19,22 @@ def _service(tmp_path: Path) -> CopilotJobService:
 
 
 class _AssemblerOk:
-    def assemble_model_context(self, *, source_weights, player_name_contains=None, limit=25):
+    def assemble_model_context(
+        self,
+        *,
+        source_weights,
+        player_name_contains=None,
+        gameweek=None,
+        bank=None,
+        free_transfers=None,
+        current_squad=None,
+        fpl_team_id=None,
+    ):
         return {
             "schema_version": "1.0",
             "weights": dict(source_weights),
-            "blended_players": [{"player_id": 1, "player_name": "Saka", "blended_projected_points": 9.2}],
+            "sources": ["elo", "airsenal"],
+            "blended_players": [{"player_id": 1, "player_name": "Saka", "team": "ARS", "position": "MID", "elo_score": 1650.0, "airsenal_predicted_points": 8.0}],
         }
 
 
@@ -33,6 +44,14 @@ class _AdapterOk:
             "schema_version": schema_version,
             "correlation_id": correlation_id,
             "core": {"summary": "Ready", "confidence": 0.81},
+            "recommended_transfers": [],
+            "ask_copilot": {"answer": "ok", "rationale": [], "confidence": 0.7},
+            "degraded_mode": {
+                "is_degraded": False,
+                "code": None,
+                "message": None,
+                "fallback_used": False,
+            },
         }
 
 
@@ -157,7 +176,7 @@ def test_replay_queued_returns_existing_job_id(tmp_path: Path) -> None:
         "schema_version": "1.0",
         "correlation_id": "corr-replay",
         "task": "hybrid",
-        "source_weights": {"fplcopilot": 0.6, "airsenal": 0.4},
+        "source_weights": {"elo": 0.6, "airsenal": 0.4},
     }
 
     first = service.submit_job(payload)
@@ -176,7 +195,7 @@ def test_replay_running_returns_existing_job_id(tmp_path: Path) -> None:
         "schema_version": "1.0",
         "correlation_id": "corr-running",
         "task": "hybrid",
-        "source_weights": {"fplcopilot": 0.5, "airsenal": 0.5},
+        "source_weights": {"elo": 0.5, "airsenal": 0.5},
     }
 
     first = service.submit_job(payload)
@@ -194,7 +213,7 @@ def test_replay_completed_returns_cached_result(tmp_path: Path) -> None:
         "schema_version": "1.0",
         "correlation_id": "corr-completed",
         "task": "hybrid",
-        "source_weights": {"fplcopilot": 0.7, "airsenal": 0.3},
+        "source_weights": {"elo": 0.7, "airsenal": 0.3},
     }
 
     first = service.submit_job(payload)
@@ -214,7 +233,7 @@ def test_force_refresh_bypasses_completed_cache(tmp_path: Path) -> None:
         "schema_version": "1.0",
         "correlation_id": "corr-force",
         "task": "hybrid",
-        "source_weights": {"fplcopilot": 0.8, "airsenal": 0.2},
+        "source_weights": {"elo": 0.8, "airsenal": 0.2},
     }
 
     first = service.submit_job(payload)
@@ -232,7 +251,7 @@ def test_force_refresh_bypasses_queued_replay(tmp_path: Path) -> None:
         "schema_version": "1.0",
         "correlation_id": "corr-force-queued",
         "task": "hybrid",
-        "source_weights": {"fplcopilot": 0.5, "airsenal": 0.5},
+        "source_weights": {"elo": 0.5, "airsenal": 0.5},
     }
 
     first = service.submit_job(payload)

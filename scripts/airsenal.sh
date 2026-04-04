@@ -23,14 +23,32 @@ fi
 # shellcheck disable=SC1090
 source "$AIRSENAL_VENV_ACTIVATE"
 
+# Interpreter for this venv (some systems have no bare `python` on PATH; use the venv binary)
+AIRSENAL_PYTHON=""
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+  if [[ -x "$VIRTUAL_ENV/bin/python" ]]; then
+    AIRSENAL_PYTHON="$VIRTUAL_ENV/bin/python"
+  elif [[ -x "$VIRTUAL_ENV/bin/python3" ]]; then
+    AIRSENAL_PYTHON="$VIRTUAL_ENV/bin/python3"
+  fi
+fi
+if [[ -z "$AIRSENAL_PYTHON" ]]; then
+  if [[ -x "$REPO_ROOT/AIrsenal/.venv/bin/python" ]]; then
+    AIRSENAL_PYTHON="$REPO_ROOT/AIrsenal/.venv/bin/python"
+  elif [[ -x "$REPO_ROOT/AIrsenal/.venv/bin/python3" ]]; then
+    AIRSENAL_PYTHON="$REPO_ROOT/AIrsenal/.venv/bin/python3"
+  fi
+fi
+if [[ -z "$AIRSENAL_PYTHON" ]]; then
+  echo "❌ Could not find python in AIrsenal venv (expected .venv/bin/python or python3)."
+  return 1 2>/dev/null || exit 1
+fi
+
 # --- export AIrsenal home + optional secrets/config ---
+mkdir -p "$AIRSENAL_HOME_DIR"
 export AIRSENAL_HOME="$AIRSENAL_HOME_DIR"
 
 # Optional: export values from files if present (won’t print them)
-if [[ -f "$AIRSENAL_HOME_DIR/AIRSENAL_DB_FILE" ]]; then
-  AIRSENAL_DB_FILE="$(cat "$AIRSENAL_HOME_DIR/AIRSENAL_DB_FILE")"
-  export AIRSENAL_DB_FILE
-fi
 if [[ -f "$AIRSENAL_HOME_DIR/FPL_TEAM_ID" ]]; then
   FPL_TEAM_ID="$(cat "$AIRSENAL_HOME_DIR/FPL_TEAM_ID")"
   export FPL_TEAM_ID
@@ -44,14 +62,54 @@ if [[ -f "$AIRSENAL_HOME_DIR/FPL_PASSWORD" ]]; then
   export FPL_PASSWORD
 fi
 
+# Always use the repo-local AIrsenal SQLite DB after the fullstack refactor.
+# Do not rely on AIRSENAL_HOME/data.db or a saved AIRSENAL_DB_FILE path, which may
+# still point at an old workspace location.
+REPO_AIRSENAL_DB="$REPO_ROOT/data/airsenal/data.db"
+mkdir -p "$(dirname "$REPO_AIRSENAL_DB")"
+export AIRSENAL_DB_FILE="$REPO_AIRSENAL_DB"
+
 echo "✅ Activated AIrsenal venv: $VIRTUAL_ENV"
 echo "✅ AIRSENAL_HOME=$AIRSENAL_HOME"
+if [[ -n "${AIRSENAL_DB_FILE:-}" ]]; then
+  echo "✅ AIRSENAL_DB_FILE=$AIRSENAL_DB_FILE"
+fi
+
+# pyproject [project.scripts] installs airsenal_* onto PATH; if the venv was
+# created without `pip install -e .` in AIrsenal/, call the same entrypoints via Python.
+AIRSENAL_SRC_ROOT="$REPO_ROOT/AIrsenal"
+airsenal_cli() {
+  local entry="$1"
+  shift
+  if command -v "$entry" >/dev/null 2>&1; then
+    "$entry" "$@"
+    return $?
+  fi
+  export PYTHONPATH="$AIRSENAL_SRC_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+  case "$entry" in
+    airsenal_update_db)
+      "$AIRSENAL_PYTHON" -c 'import sys; from airsenal.scripts.update_db import main; sys.argv = ["airsenal_update_db"] + sys.argv[1:]; main()' "$@"
+      ;;
+    airsenal_run_prediction)
+      "$AIRSENAL_PYTHON" -c 'import sys; from airsenal.scripts.fill_predictedscore_table import main; sys.argv = ["airsenal_run_prediction"] + sys.argv[1:]; main()' "$@"
+      ;;
+    airsenal_run_optimization)
+      "$AIRSENAL_PYTHON" -c 'import sys; from airsenal.scripts.fill_transfersuggestion_table import main; sys.argv = ["airsenal_run_optimization"] + sys.argv[1:]; main()' "$@"
+      ;;
+    *)
+      echo "❌ Command not found: $entry" >&2
+      echo "   Install AIrsenal into this venv (adds scripts to PATH):" >&2
+      echo "   cd \"$AIRSENAL_SRC_ROOT\" && pip install -e ." >&2
+      return 127
+      ;;
+  esac
+}
 
 TEAM_ID="${FPL_TEAM_ID:-}"
 if [[ -z "$TEAM_ID" && -f "$AIRSENAL_HOME_DIR/FPL_TEAM_ID" ]]; then
   TEAM_ID="$(cat "$AIRSENAL_HOME_DIR/FPL_TEAM_ID")"
 fi
-DB="${AIRSENAL_DB_FILE:-$REPO_ROOT/data/airsenal/data.db}"
+DB="$REPO_AIRSENAL_DB"
 OUT="$REPO_ROOT/data/api"
 
 get_file_mtime() {
@@ -93,14 +151,14 @@ prompt_yes_no() {
 run_update_db() {
   echo
   echo "🔄 Updating the AIrsenal database..."
-  airsenal_update_db
+  airsenal_cli airsenal_update_db
 }
 
 run_predictions() {
   local weeks="$1"
   echo
   echo "🔮 Running predictions for the next $weeks gameweek(s)..."
-  airsenal_run_prediction --weeks_ahead "$weeks"
+  airsenal_cli airsenal_run_prediction --weeks_ahead "$weeks"
 }
 
 prompt_weeks_ahead() {
@@ -114,7 +172,7 @@ run_optimization() {
   ensure_team_id || return 1
   echo
   echo "🧠 Running optimization for the next $weeks gameweek(s)..."
-  airsenal_run_optimization --weeks_ahead "$weeks" --fpl_team_id "$TEAM_ID"
+  airsenal_cli airsenal_run_optimization --weeks_ahead "$weeks" --fpl_team_id "$TEAM_ID"
 }
 
 # Export API JSON via adapters/airsenal_adapter.py (predictions, transfers,
@@ -124,7 +182,7 @@ run_adapter_export() {
   echo
   echo "📦 Exporting JSON to $OUT"
   echo "   (gw_<GW>_optimization_<TEAM_ID>.json + gw_<GW>_lineup_<TEAM_ID>.json when team id set)"
-  local adapter_cmd=(python "$REPO_ROOT/adapters/airsenal_adapter.py" --db "$DB" --out "$OUT" --gw "$gw")
+  local adapter_cmd=("$AIRSENAL_PYTHON" "$REPO_ROOT/adapters/airsenal_adapter.py" --db "$DB" --out "$OUT" --gw "$gw")
   if [[ -n "${TEAM_ID:-}" ]]; then
     adapter_cmd+=(--team-id "$TEAM_ID")
   fi
