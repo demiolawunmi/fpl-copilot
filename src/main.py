@@ -207,12 +207,28 @@ class CopilotSourceWeights(BaseModel):
     airsenal: float = Field(..., ge=0.0, le=1.0)
 
 
+class CopilotCurrentSquadPlayer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fpl_api_id: int
+    player_name: str
+    team: str
+    position: Literal["GK", "DEF", "MID", "FWD"]
+    price: float = Field(..., ge=0.0)
+    x_pts: float = Field(..., ge=0.0)
+
+
 class CopilotBlendSubmitRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str
     correlation_id: str
     source_weights: CopilotSourceWeights
+    gameweek: Optional[int] = Field(default=None, ge=1)
+    bank: Optional[float] = Field(default=None, ge=0.0)
+    free_transfers: Optional[int] = Field(default=None, ge=0)
+    current_squad: List[CopilotCurrentSquadPlayer] = Field(default_factory=list)
+    fpl_team_id: Optional[int] = Field(default=None, ge=1)
     task: Literal["hybrid"] = "hybrid"
     force_refresh: bool = False
 
@@ -244,6 +260,7 @@ class CopilotTransferPlayerRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     player_id: int
+    fpl_api_id: Optional[int] = None
     player_name: str
 
 
@@ -326,6 +343,32 @@ class CopilotBlendJobStatusResponse(BaseModel):
     error: Optional[CopilotErrorResponse] = None
 
 
+class CopilotChatTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=12000)
+
+
+class CopilotChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "1.0"
+    correlation_id: str = Field(default="chat", max_length=128)
+    message: str = Field(..., min_length=1, max_length=4000)
+    messages: List[CopilotChatTurn] = Field(default_factory=list, max_length=30)
+    blend_input: CopilotBlendSubmitRequest
+    blend_result: CopilotHybridResultPayload
+
+
+class CopilotChatResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    correlation_id: str
+    answer: str
+
+
 _copilot_job_service = None
 
 
@@ -383,6 +426,30 @@ def get_copilot_blend_job(job_id: str) -> CopilotBlendJobStatusResponse:
         "error": job.get("error_json"),
     }
     return CopilotBlendJobStatusResponse.model_validate(response_payload)
+
+
+@app.post(
+    "/api/copilot/chat",
+    response_model=CopilotChatResponse,
+    responses={503: {"description": "LLM unavailable"}},
+)
+def post_copilot_chat(req: CopilotChatRequest) -> CopilotChatResponse:
+    from src.services.copilot_chat_service import CopilotChatError, run_copilot_chat
+
+    try:
+        answer = run_copilot_chat(
+            blend_input=req.blend_input.model_dump(by_alias=True),
+            blend_result=req.blend_result.model_dump(by_alias=True),
+            prior_messages=[{"role": t.role, "content": t.content} for t in req.messages],
+            user_message=req.message,
+        )
+        return CopilotChatResponse(
+            schema_version=req.schema_version,
+            correlation_id=req.correlation_id,
+            answer=answer,
+        )
+    except CopilotChatError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
