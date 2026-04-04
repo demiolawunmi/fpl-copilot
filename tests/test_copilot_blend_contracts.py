@@ -19,6 +19,19 @@ def test_submit_contract_accepts_valid_payload() -> None:
         "schema_version": "1.0",
         "correlation_id": "corr-123",
         "source_weights": {"elo": 0.6, "airsenal": 0.4},
+        "gameweek": 31,
+        "bank": 1.5,
+        "free_transfers": 2,
+        "current_squad": [
+            {
+                "fpl_api_id": 16,
+                "player_name": "Saka",
+                "team": "Arsenal",
+                "position": "MID",
+                "price": 10.2,
+                "x_pts": 8.1,
+            }
+        ],
         "task": "hybrid",
         "force_refresh": False,
     }
@@ -29,6 +42,10 @@ def test_submit_contract_accepts_valid_payload() -> None:
     assert model.correlation_id == "corr-123"
     assert model.source_weights.elo == pytest.approx(0.6)
     assert model.source_weights.airsenal == pytest.approx(0.4)
+    assert model.gameweek == 31
+    assert model.bank == pytest.approx(1.5)
+    assert model.free_transfers == 2
+    assert model.current_squad[0].fpl_api_id == 16
 
 
 def test_submit_contract_rejects_invalid_weights_sum() -> None:
@@ -56,8 +73,8 @@ def test_hybrid_contract_accepts_valid_payload() -> None:
         "recommended_transfers": [
             {
                 "transfer_id": "t1",
-                "out": {"player_id": 101, "player_name": "Player Out"},
-                "in": {"player_id": 202, "player_name": "Player In"},
+                "out": {"player_id": 101, "fpl_api_id": 16, "player_name": "Player Out"},
+                "in": {"player_id": 202, "fpl_api_id": 355, "player_name": "Player In"},
                 "reason": "Improves expected points",
                 "projected_points_delta": 4.6,
             }
@@ -79,6 +96,7 @@ def test_hybrid_contract_accepts_valid_payload() -> None:
     assert model.correlation_id == "corr-789"
     assert model.core.summary
     assert model.recommended_transfers[0].out.player_id == 101
+    assert model.recommended_transfers[0].in_.fpl_api_id == 355
     assert model.ask_copilot.answer
 
 

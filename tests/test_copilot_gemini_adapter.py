@@ -38,10 +38,26 @@ class _Client:
 _ELO_CONTEXT = {
     "schema_version": "1.0",
     "weights": {"elo": 0.7, "airsenal": 0.3},
+    "gameweek": 31,
+    "bank": 1.5,
+    "free_transfers": 2,
     "sources": ["elo", "airsenal"],
+    "current_squad": [
+        {
+            "player_id": 101,
+            "fpl_api_id": 16,
+            "player_name": "Saka",
+            "team": "Arsenal",
+            "position": "MID",
+            "price": 10.2,
+            "x_pts": 8.0,
+            "elo_score": 1650.0,
+            "airsenal_predicted_points": 8.0,
+        }
+    ],
     "blended_players": [
-        {"player_id": 101, "player_name": "Saka", "team": "ARS", "position": "MID", "elo_score": 1650.0, "airsenal_predicted_points": 8.0},
-        {"player_id": 202, "player_name": "Haaland", "team": "MCI", "position": "FWD", "elo_score": 1850.5, "airsenal_predicted_points": 11.0},
+        {"player_id": 101, "player_name": "Saka", "team": "ARS", "position": "MID", "price": 10.2, "elo_score": 1650.0, "airsenal_predicted_points": 8.0},
+        {"player_id": 202, "player_name": "Haaland", "team": "MCI", "position": "FWD", "price": 14.5, "elo_score": 1850.5, "airsenal_predicted_points": 11.0},
     ],
 }
 
@@ -109,8 +125,13 @@ def test_prompt_includes_elo_weight_instructions() -> None:
     prompt = call_log[0]["contents"]
     assert "ELO scores are weighted at 70%" in prompt
     assert "AIrsenal predictions at 30%" in prompt
-    assert "Saka (ARS, MID): ELO=1650.0, AIrsenal=8.0" in prompt
-    assert "Haaland (MCI, FWD): ELO=1850.5, AIrsenal=11.0" in prompt
+    assert "Target gameweek: 31" in prompt
+    assert "Available bank: £1.5m" in prompt
+    assert "Free transfers remaining: 2" in prompt
+    assert "Every transfer OUT must come from CURRENT SQUAD." in prompt
+    assert "Saka [AIrsenal ID=101, FPL ID=16]" in prompt
+    assert "Saka (ARS, MID): £10.2m, ELO=1650.0, AIrsenal=8.0" in prompt
+    assert "Haaland (MCI, FWD): £14.5m, ELO=1850.5, AIrsenal=11.0" in prompt
 
 
 def test_prompt_handles_elo_only_weighting() -> None:

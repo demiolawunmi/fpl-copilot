@@ -9,12 +9,16 @@ from src.services.copilot_job_service import CopilotJobService
 
 
 class _AssemblerOk:
-    def assemble_model_context(self, *, source_weights, player_name_contains=None, gameweek=None):
+    def assemble_model_context(self, *, source_weights, player_name_contains=None, gameweek=None, bank=None, free_transfers=None, current_squad=None, fpl_team_id=None):
         return {
             "schema_version": "1.0",
             "weights": dict(source_weights),
+            "gameweek": gameweek,
+            "bank": bank,
+            "free_transfers": free_transfers,
             "sources": ["elo", "airsenal"],
             "player_name_contains": player_name_contains,
+            "current_squad": current_squad or [],
             "blended_players": [
                 {"player_id": 1, "player_name": "Saka", "team": "ARS", "position": "MID", "elo_score": 1650.0, "airsenal_predicted_points": 8.0},
                 {"player_id": 2, "player_name": "Haaland", "team": "MCI", "position": "FWD", "elo_score": 1850.5, "airsenal_predicted_points": 11.0},
@@ -208,12 +212,24 @@ def test_execute_passes_gameweek_to_assembler(tmp_path: Path) -> None:
         def __init__(self):
             self.captured = None
 
-        def assemble_model_context(self, *, source_weights, player_name_contains=None, gameweek=None):
-            self.captured = {"source_weights": source_weights, "player_name_contains": player_name_contains, "gameweek": gameweek}
+        def assemble_model_context(self, *, source_weights, player_name_contains=None, gameweek=None, bank=None, free_transfers=None, current_squad=None, fpl_team_id=None):
+            self.captured = {
+                "source_weights": source_weights,
+                "player_name_contains": player_name_contains,
+                "gameweek": gameweek,
+                "bank": bank,
+                "free_transfers": free_transfers,
+                "current_squad": current_squad,
+                "fpl_team_id": fpl_team_id,
+            }
             return {
                 "schema_version": "1.0",
                 "weights": dict(source_weights),
+                "gameweek": gameweek,
+                "bank": bank,
+                "free_transfers": free_transfers,
                 "sources": ["elo", "airsenal"],
+                "current_squad": current_squad or [],
                 "blended_players": [
                     {"player_id": 1, "player_name": "Saka", "team": "ARS", "position": "MID", "elo_score": 1650.0, "airsenal_predicted_points": 8.0},
                 ],
@@ -236,10 +252,116 @@ def test_execute_passes_gameweek_to_assembler(tmp_path: Path) -> None:
             "source_weights": {"elo": 0.7, "airsenal": 0.3},
             "player_name_contains": "Saka",
             "gameweek": 27,
+            "bank": 1.3,
+            "free_transfers": 2,
+            "current_squad": [
+                {
+                    "fpl_api_id": 16,
+                    "player_name": "Saka",
+                    "team": "Arsenal",
+                    "position": "MID",
+                    "price": 10.2,
+                    "x_pts": 8.0,
+                }
+            ],
         }
     )
     service.execute_next_queued_job()
 
     assert assembler.captured["gameweek"] == 27
+    assert assembler.captured["bank"] == 1.3
+    assert assembler.captured["free_transfers"] == 2
+    assert assembler.captured["current_squad"][0]["fpl_api_id"] == 16
     assert assembler.captured["player_name_contains"] == "Saka"
     assert assembler.captured["source_weights"] == {"elo": 0.7, "airsenal": 0.3}
+    assert assembler.captured["fpl_team_id"] is None
+
+
+class _AdapterWithTransfers:
+    def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
+        return {
+            "schema_version": schema_version,
+            "correlation_id": correlation_id,
+            "core": {"summary": "Ready", "confidence": 0.81},
+            "recommended_transfers": [
+                {
+                    "out": {"player_id": 1, "player_name": "Saka"},
+                    "in": {"player_id": 2, "player_name": "Haaland"},
+                    "projected_points_delta": 999.0,
+                    "reason": "test",
+                }
+            ],
+            "ask_copilot": {
+                "answer": "Hold transfer.",
+                "rationale": ["Small edge"],
+                "confidence": 0.7,
+            },
+            "degraded_mode": {
+                "is_degraded": False,
+                "code": None,
+                "message": None,
+                "fallback_used": False,
+            },
+        }
+
+
+def test_transfer_delta_overwritten_from_blended_airsenal_xpts(tmp_path: Path) -> None:
+    service = _service(tmp_path, _AdapterWithTransfers())
+
+    accepted = service.submit_job(
+        {
+            "schema_version": "1.0",
+            "correlation_id": "corr-delta",
+            "task": "hybrid",
+            "source_weights": {"elo": 0.6, "airsenal": 0.4},
+        }
+    )
+    service.execute_next_queued_job()
+    finished = service.get_job_status(accepted["job_id"])
+    assert finished is not None
+    transfers = finished["result_json"]["recommended_transfers"]
+    assert len(transfers) == 1
+    assert transfers[0]["projected_points_delta"] == 3.0
+
+
+def test_execute_passes_fpl_team_id_to_assembler(tmp_path: Path) -> None:
+    class _AssemblerCapture:
+        def __init__(self):
+            self.captured = None
+
+        def assemble_model_context(self, *, source_weights, player_name_contains=None, gameweek=None, bank=None, free_transfers=None, current_squad=None, fpl_team_id=None):
+            self.captured = {"fpl_team_id": fpl_team_id}
+            return {
+                "schema_version": "1.0",
+                "weights": dict(source_weights),
+                "gameweek": gameweek,
+                "bank": bank,
+                "free_transfers": free_transfers,
+                "sources": ["elo", "airsenal"],
+                "current_squad": current_squad or [],
+                "blended_players": [
+                    {"player_id": 1, "player_name": "Saka", "team": "ARS", "position": "MID", "elo_score": 1650.0, "airsenal_predicted_points": 8.0},
+                ],
+            }
+
+    repo = CopilotJobRepository(tmp_path / "jobs.db")
+    assembler = _AssemblerCapture()
+    service = CopilotJobService(
+        repository=repo,
+        assembler=assembler,
+        gemini_adapter=_AdapterOk(),
+        fallback=CopilotBlendFallback(),
+    )
+
+    service.submit_job(
+        {
+            "schema_version": "1.0",
+            "correlation_id": "corr-tid",
+            "task": "hybrid",
+            "source_weights": {"elo": 0.7, "airsenal": 0.3},
+            "fpl_team_id": 8994418,
+        }
+    )
+    service.execute_next_queued_job()
+
+    assert assembler.captured["fpl_team_id"] == 8994418

@@ -38,13 +38,13 @@ def _seed_airsenal_db(db_path: Path) -> None:
     )
     con.executemany(
         """
-        INSERT INTO player (player_id, name, display_name)
-        VALUES (?, ?, ?);
+        INSERT INTO player (player_id, fpl_api_id, name, display_name)
+        VALUES (?, ?, ?, ?);
         """,
         [
-            (101, "Saka", "Bukayo Saka"),
-            (202, "Haaland", "Erling Haaland"),
-            (303, "Palmer", "Cole Palmer"),
+            (101, 11, "Saka", "Bukayo Saka"),
+            (202, 22, "Haaland", "Erling Haaland"),
+            (303, 33, "Palmer", "Cole Palmer"),
         ],
     )
     con.executemany(
@@ -80,6 +80,7 @@ def test_returns_predictions_for_latest_tag_only(tmp_path: Path) -> None:
 
     saka = next(p for p in predictions if p["player_id"] == 101)
     assert saka["predicted_points"] == pytest.approx(13.0)
+    assert saka["fpl_api_id"] == 11
     assert saka["player_name"] == "Bukayo Saka"
 
     haaland = next(p for p in predictions if p["player_id"] == 202)
@@ -98,8 +99,9 @@ def test_returns_correct_schema(tmp_path: Path) -> None:
 
     assert len(predictions) == 3
     for pred in predictions:
-        assert set(pred.keys()) == {"player_id", "player_name", "predicted_points"}
+        assert set(pred.keys()) == {"player_id", "fpl_api_id", "player_name", "predicted_points"}
         assert isinstance(pred["player_id"], int)
+        assert isinstance(pred["fpl_api_id"], int)
         assert isinstance(pred["player_name"], str)
         assert isinstance(pred["predicted_points"], float)
 

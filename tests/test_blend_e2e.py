@@ -74,6 +74,7 @@ def _make_model_context():
         "blended_players": [
             {
                 "player_id": 1,
+                "fpl_api_id": 381,
                 "player_name": "Salah",
                 "team": "LIV",
                 "position": "MID",
@@ -82,6 +83,7 @@ def _make_model_context():
             },
             {
                 "player_id": 2,
+                "fpl_api_id": 355,
                 "player_name": "Haaland",
                 "team": "MCI",
                 "position": "FWD",
@@ -90,6 +92,7 @@ def _make_model_context():
             },
             {
                 "player_id": 3,
+                "fpl_api_id": 16,
                 "player_name": "Saka",
                 "team": "ARS",
                 "position": "MID",
@@ -193,6 +196,7 @@ def test_e2e_happy_path_gemini_succeeds(tmp_path, monkeypatch):
         assert result["core"]["summary"] == "Ready"
         assert result["core"]["confidence"] == 0.81
         assert len(result["recommended_transfers"]) == 1
+        assert result["recommended_transfers"][0]["in"]["fpl_api_id"] == 381
         assert result["ask_copilot"]["answer"] == "Hold transfer."
         assert result["degraded_mode"]["is_degraded"] is False
         assert result["degraded_mode"]["fallback_used"] is False

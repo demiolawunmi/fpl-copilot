@@ -115,8 +115,9 @@ def test_returns_correct_structure(tmp_path: Path) -> None:
     assert len(results) == 5
 
     for player in results:
-        assert set(player.keys()) == {"player_id", "player_name", "team", "position", "elo_score"}
+        assert set(player.keys()) == {"player_id", "fpl_api_id", "player_name", "team", "position", "elo_score"}
         assert isinstance(player["player_id"], int)
+        assert isinstance(player["fpl_api_id"], int)
         assert isinstance(player["player_name"], str)
         assert isinstance(player["team"], str)
         assert isinstance(player["position"], str)
@@ -179,6 +180,15 @@ def test_unknown_team_skipped_gracefully(tmp_path: Path) -> None:
     assert len(results) == 1
     assert results[0]["player_name"] == "Haaland"
     assert results[0]["elo_score"] == pytest.approx(2280.0)  # 1900 * 1.2
+
+
+def test_get_player_prices_for_ids_returns_fpl_millions(tmp_path: Path) -> None:
+    """player_attributes.price is in tenths of £m (150 → £15.0m)."""
+    ratings = {"Manchester City": 1900.0}
+    scorer = _make_scorer(tmp_path, ratings)
+    prices = scorer.get_player_prices_for_ids([1, 2], gameweek=1)
+    assert prices[1] == pytest.approx(15.0)
+    assert prices[2] == pytest.approx(10.0)
 
 
 def test_default_gameweek_uses_latest(tmp_path: Path) -> None:

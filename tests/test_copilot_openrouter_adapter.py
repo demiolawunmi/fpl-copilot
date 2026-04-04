@@ -39,7 +39,23 @@ class _Session:
 _CTX = {
     "schema_version": "1.0",
     "weights": {"elo": 0.7, "airsenal": 0.3},
+    "gameweek": 31,
+    "bank": 1.5,
+    "free_transfers": 2,
     "sources": ["elo", "airsenal"],
+    "current_squad": [
+        {
+            "player_id": 101,
+            "fpl_api_id": 16,
+            "player_name": "Saka",
+            "team": "Arsenal",
+            "position": "MID",
+            "price": 10.2,
+            "x_pts": 8.0,
+            "elo_score": 1650.0,
+            "airsenal_predicted_points": 8.0,
+        }
+    ],
     "blended_players": [
         {
             "player_id": 101,
@@ -92,6 +108,12 @@ def test_openrouter_success_payload(monkeypatch) -> None:
     payload = session.calls[0]["json"]
     assert isinstance(payload, dict)
     assert payload.get("model") == "google/gemma-2-9b-it:free"
+    messages = payload.get("messages")
+    assert isinstance(messages, list)
+    content = messages[0]["content"]
+    assert "Target gameweek: 31" in content
+    assert "Available bank: £1.5m" in content
+    assert "Free transfers remaining: 2" in content
 
 
 def test_openrouter_missing_api_key(monkeypatch) -> None:

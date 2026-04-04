@@ -71,7 +71,7 @@ class CopilotEloScorer:
             if gameweek is not None:
                 rows = con.execute(
                     """
-                    SELECT p.player_id, p.display_name, pa.team, pa.position
+                    SELECT p.player_id, p.fpl_api_id, p.display_name, pa.team, pa.position
                     FROM player_attributes pa
                     JOIN player p ON pa.player_id = p.player_id
                     WHERE pa.gameweek = ?
@@ -88,7 +88,7 @@ class CopilotEloScorer:
                     return []
                 rows = con.execute(
                     """
-                    SELECT p.player_id, p.display_name, pa.team, pa.position
+                    SELECT p.player_id, p.fpl_api_id, p.display_name, pa.team, pa.position
                     FROM player_attributes pa
                     JOIN player p ON pa.player_id = p.player_id
                     WHERE pa.gameweek = ?
@@ -110,6 +110,7 @@ class CopilotEloScorer:
 
             results.append({
                 "player_id": row["player_id"],
+                "fpl_api_id": row["fpl_api_id"],
                 "player_name": row["display_name"] or "",
                 "team": row["team"],
                 "position": position,
@@ -117,6 +118,49 @@ class CopilotEloScorer:
             })
 
         return results
+
+    def get_player_prices_for_ids(
+        self,
+        player_ids: List[int],
+        gameweek: Optional[int] = None,
+    ) -> Dict[int, float]:
+        """Return player_id -> current FPL price in £m for the given (or latest) gameweek.
+
+        AIrsenal stores ``player_attributes.price`` in tenths of a million (e.g. 105 → £10.5m).
+        """
+        if not player_ids:
+            return {}
+
+        try:
+            with self._connect() as con:
+                if gameweek is not None:
+                    gw = gameweek
+                else:
+                    max_gw_row = con.execute(
+                        "SELECT MAX(gameweek) AS max_gw FROM player_attributes;"
+                    ).fetchone()
+                    gw = max_gw_row["max_gw"] if max_gw_row else None
+                if gw is None:
+                    return {}
+
+                placeholders = ",".join("?" * len(player_ids))
+                rows = con.execute(
+                    f"""
+                    SELECT player_id, MAX(price) AS price
+                    FROM player_attributes
+                    WHERE gameweek = ? AND player_id IN ({placeholders})
+                    GROUP BY player_id;
+                    """,
+                    (gw, *player_ids),
+                ).fetchall()
+        except sqlite3.OperationalError:
+            return {}
+
+        return {
+            int(row["player_id"]): round(float(row["price"]) / 10.0, 1)
+            for row in rows
+            if row["price"] is not None
+        }
 
 
 def _default_db_path() -> str:

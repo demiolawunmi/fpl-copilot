@@ -9,6 +9,7 @@ from uuid import uuid4
 from src.services.copilot_blend_fallback import CopilotBlendFallback
 from src.services.copilot_elo_llm_assembler import CopilotEloLlmAssembler
 from src.services.copilot_gemini_adapter import CopilotGeminiAdapter
+from src.services.copilot_blend_snapshot import write_blend_snapshot
 from src.services.copilot_job_repository import CopilotJobRepository
 from src.services.copilot_openrouter_adapter import CopilotOpenRouterAdapter
 
@@ -20,6 +21,10 @@ class _BlendAssembler(Protocol):
         source_weights: Mapping[str, float],
         player_name_contains: str | None = None,
         gameweek: int | None = None,
+        bank: float | None = None,
+        free_transfers: int | None = None,
+        current_squad: list[dict[str, Any]] | None = None,
+        fpl_team_id: int | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -37,6 +42,73 @@ class _LlmAdapter(Protocol):
 
 def _stable_json_dumps(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+
+def _build_fpl_id_lookup(model_context: Mapping[str, Any]) -> dict[int, int]:
+    lookup: dict[int, int] = {}
+    for player in model_context.get("blended_players", []):
+        try:
+            player_id = int(player["player_id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        fpl_api_id = player.get("fpl_api_id")
+        if fpl_api_id is None:
+            continue
+        try:
+            lookup[player_id] = int(fpl_api_id)
+        except (TypeError, ValueError):
+            continue
+    return lookup
+
+
+def _apply_airsenal_transfer_deltas(
+    hybrid_payload: dict[str, Any],
+    *,
+    model_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Set projected_points_delta from blended_players AIrsenal xPts (IN − OUT)."""
+    blended = model_context.get("blended_players") or []
+    xp_by_pid: dict[int, float] = {}
+    for p in blended:
+        try:
+            pid = int(p["player_id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        xp_by_pid[pid] = float(p.get("airsenal_predicted_points", 0.0) or 0.0)
+
+    for transfer in hybrid_payload.get("recommended_transfers", []):
+        out_ref = transfer.get("out") or {}
+        in_ref = transfer.get("in") or {}
+        out_id = out_ref.get("player_id")
+        in_id = in_ref.get("player_id")
+        if not isinstance(out_id, int) or not isinstance(in_id, int):
+            continue
+        delta = xp_by_pid.get(in_id, 0.0) - xp_by_pid.get(out_id, 0.0)
+        transfer["projected_points_delta"] = round(delta, 3)
+    return hybrid_payload
+
+
+def _attach_fpl_api_ids(
+    hybrid_payload: dict[str, Any],
+    *,
+    model_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    lookup = _build_fpl_id_lookup(model_context)
+    if not lookup:
+        return hybrid_payload
+
+    for transfer in hybrid_payload.get("recommended_transfers", []):
+        for side in ("out", "in"):
+            player_ref = transfer.get(side)
+            if not isinstance(player_ref, dict):
+                continue
+            player_id = player_ref.get("player_id")
+            if not isinstance(player_id, int):
+                continue
+            fpl_api_id = lookup.get(player_id)
+            if fpl_api_id is not None:
+                player_ref["fpl_api_id"] = fpl_api_id
+    return hybrid_payload
 
 
 class CopilotJobService:
@@ -146,17 +218,41 @@ class CopilotJobService:
             source_weights = payload["source_weights"]
             player_name_contains = payload.get("player_name_contains")
             gameweek = payload.get("gameweek")
+            bank = payload.get("bank")
+            free_transfers = payload.get("free_transfers")
+            current_squad = payload.get("current_squad")
+            fpl_team_id = payload.get("fpl_team_id")
 
             model_context = self.assembler.assemble_model_context(
                 source_weights=source_weights,
                 player_name_contains=player_name_contains,
                 gameweek=gameweek,
+                bank=bank,
+                free_transfers=free_transfers,
+                current_squad=current_squad,
+                fpl_team_id=fpl_team_id,
             )
 
             hybrid_payload = self.gemini_adapter.generate_hybrid_payload(
                 schema_version=str(job["schema_version"]),
                 correlation_id=str(job["correlation_id"]),
                 model_context=model_context,
+            )
+            hybrid_payload = _attach_fpl_api_ids(
+                hybrid_payload,
+                model_context=model_context,
+            )
+            hybrid_payload = _apply_airsenal_transfer_deltas(
+                hybrid_payload,
+                model_context=model_context,
+            )
+
+            write_blend_snapshot(
+                job_id=job_id,
+                schema_version=str(job["schema_version"]),
+                correlation_id=str(job["correlation_id"]),
+                input_payload=payload,
+                result_payload=hybrid_payload,
             )
 
             self.repository.update_job_status(
@@ -171,6 +267,21 @@ class CopilotJobService:
                         schema_version=str(job["schema_version"]),
                         correlation_id=str(job["correlation_id"]),
                         model_context=model_context,
+                    )
+                    hybrid_payload = _attach_fpl_api_ids(
+                        hybrid_payload,
+                        model_context=model_context,
+                    )
+                    hybrid_payload = _apply_airsenal_transfer_deltas(
+                        hybrid_payload,
+                        model_context=model_context,
+                    )
+                    write_blend_snapshot(
+                        job_id=job_id,
+                        schema_version=str(job["schema_version"]),
+                        correlation_id=str(job["correlation_id"]),
+                        input_payload=payload,
+                        result_payload=hybrid_payload,
                     )
                     self.repository.update_job_status(
                         job_id=job_id,

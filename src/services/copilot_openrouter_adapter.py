@@ -9,6 +9,8 @@ from typing import Any, Callable, Protocol
 import requests
 from pydantic import ValidationError
 
+from src.services.copilot_prompt_optimization import format_airsenal_optimization_text
+
 
 class _HttpSession(Protocol):
     def post(
@@ -60,15 +62,33 @@ class CopilotOpenRouterAdapter:
         weights = model_context.get("weights", {})
         elo_weight = weights.get("elo", 0.0)
         airsenal_weight = weights.get("airsenal", 0.0)
+        gameweek = model_context.get("gameweek")
+        bank = model_context.get("bank")
+        free_transfers = model_context.get("free_transfers")
+        current_squad = model_context.get("current_squad", [])
         blended_players = model_context.get("blended_players", [])
 
         player_summaries = []
         for p in blended_players[:15]:
+            price_m = float(p.get("price", 0.0) or 0.0)
             player_summaries.append(
                 f"- {p['player_name']} ({p['team']}, {p['position']}): "
-                f"ELO={p['elo_score']:.1f}, AIrsenal={p['airsenal_predicted_points']:.1f}"
+                f"£{price_m:.1f}m, ELO={p['elo_score']:.1f}, AIrsenal={p['airsenal_predicted_points']:.1f}"
             )
         players_text = "\n".join(player_summaries) if player_summaries else "(no player data available)"
+
+        squad_summaries = []
+        for p in current_squad[:15]:
+            id_bits = []
+            if p.get("player_id") is not None:
+                id_bits.append(f"AIrsenal ID={p['player_id']}")
+            id_bits.append(f"FPL ID={p['fpl_api_id']}")
+            squad_summaries.append(
+                f"- {p['player_name']} [{', '.join(id_bits)}] ({p['team']}, {p['position']}): "
+                f"price=£{p['price']:.1f}m, current xPts={p['x_pts']:.1f}, "
+                f"ELO={p['elo_score']:.1f}, AIrsenal={p['airsenal_predicted_points']:.1f}"
+            )
+        current_squad_text = "\n".join(squad_summaries) if squad_summaries else "(current squad not provided)"
 
         weight_instruction = ""
         if elo_weight > 0 and airsenal_weight > 0:
@@ -91,15 +111,40 @@ class CopilotOpenRouterAdapter:
                 "Focus on players with the highest projected points."
             )
 
+        bank_line = f"- Available bank: £{bank:.1f}m\n" if bank is not None else "- Available bank: not provided\n"
+        free_transfers_line = (
+            f"- Free transfers remaining: {free_transfers}\n"
+            if free_transfers is not None
+            else "- Free transfers remaining: not provided\n"
+        )
+        opt_text = format_airsenal_optimization_text(model_context)
+
         context_json = json.dumps(model_context, separators=(",", ":"), sort_keys=True)
         return (
             "ROLE: You are a football analytics assistant for FPL Copilot. "
             "You must only use the provided context and never fabricate hidden sources.\n\n"
+            "TRANSFER CONSTRAINTS:\n"
+            f"- Target gameweek: {gameweek if gameweek is not None else 'not provided'}\n"
+            f"{bank_line}"
+            f"{free_transfers_line}"
+            "- Every transfer OUT must come from CURRENT SQUAD.\n"
+            "- Recommend affordable moves only, using the stated bank plus the outgoing player's price.\n"
+            "- Prefer recommendations that fit within the remaining free transfers; if a move likely requires a hit, say so explicitly.\n"
+            "- Use exact player IDs from the supplied context when available.\n\n"
+            "CURRENT SQUAD:\n"
+            f"{current_squad_text}\n\n"
+            "AIRSENAL OPTIMIZATION (latest transfer_suggestion run for this team; same data as "
+            "gw_<GW>_optimization_<FPL_TEAM_ID>.json):\n"
+            f"{opt_text}"
+            "Use this as a reference plan from AIrsenal's tree-search optimizer; reconcile with "
+            "ELO/AIrsenal blend and prices. Do not invent extra transfers not implied by context.\n\n"
             "DATA SOURCES:\n"
             "1. ELO SCORES — measure team strength adjusted for player position. "
             "Higher ELO = player benefits from stronger team context.\n"
             "2. AIRSENAL PREDICTIONS — ML-projected points for the upcoming gameweek. "
-            "Higher = more expected FPL points.\n\n"
+            "Higher = more expected FPL points.\n"
+            "3. PRICE — current FPL list price in £m (from AIrsenal DB snapshot for the target gameweek). "
+            "Use this for transfer IN affordability with bank + sale price.\n\n"
             f"{weight_instruction}\n\n"
             "TOP PLAYERS (ELO + AIrsenal):\n"
             f"{players_text}\n\n"
@@ -110,7 +155,10 @@ class CopilotOpenRouterAdapter:
             "2. CAPTAIN PICK: Recommend a captain based on the blended assessment of ELO and AIrsenal. "
             "The ideal captain combines high team strength (ELO) with high projected output (AIrsenal).\n"
             "3. EXPLAIN REASONING: Every recommendation must include a clear 'reason' field "
-            "that references specific ELO scores and/or AIrsenal predictions from the data.\n\n"
+            "that references specific ELO scores and/or AIrsenal predictions from the data.\n"
+            "4. PROJECTED_POINTS_DELTA: For each transfer, set this to the expected GW xPts gain "
+            "using AIrsenal predicted points from blended_players for IN minus OUT (same gameweek). "
+            "If a player is missing from blended_players, use 0 for that side.\n\n"
             "OUTPUT POLICY: Return exactly one strict JSON object conforming to this schema and no markdown/text.\n"
             "{\n"
             '  "core": {"summary": "string", "confidence": 0.0},\n'
@@ -214,6 +262,55 @@ class CopilotOpenRouterAdapter:
         if not isinstance(content, str) or not content.strip():
             raise ValueError("OpenRouter response content is empty")
         return content
+
+    def _invoke_chat_completion(self, messages: list[dict[str, str]]) -> str:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": os.environ.get("OPENROUTER_HTTP_REFERER", "http://localhost"),
+            "X-Title": os.environ.get("OPENROUTER_APP_TITLE", "fpl-copilot"),
+        }
+        body = {
+            "model": self.config.model_name,
+            "messages": messages,
+            "temperature": 0.45,
+            "max_tokens": 4096,
+        }
+        response = self.session.post(
+            f"{self.config.base_url}/chat/completions",
+            headers=headers,
+            json=body,
+            timeout=self.config.timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        choices = payload.get("choices") or []
+        if not choices:
+            raise ValueError("OpenRouter chat response has no choices")
+        message = choices[0].get("message") or {}
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("OpenRouter chat response content is empty")
+        return content.strip()
+
+    def generate_copilot_chat_reply(
+        self,
+        *,
+        system_prompt: str,
+        prior_messages: list[dict[str, str]],
+        user_message: str,
+    ) -> str:
+        messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        for m in prior_messages:
+            role = m.get("role", "")
+            if role not in ("user", "assistant"):
+                continue
+            content = (m.get("content") or "").strip()
+            if not content:
+                continue
+            messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_message})
+        return self._invoke_chat_completion(messages)
 
     def _validate_hybrid_payload(
         self,

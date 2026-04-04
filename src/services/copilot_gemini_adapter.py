@@ -9,6 +9,8 @@ from typing import Any, Callable
 
 from pydantic import ValidationError
 
+from src.services.copilot_prompt_optimization import format_airsenal_optimization_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,15 +48,33 @@ class CopilotGeminiAdapter:
         weights = model_context.get("weights", {})
         elo_weight = weights.get("elo", 0.0)
         airsenal_weight = weights.get("airsenal", 0.0)
+        gameweek = model_context.get("gameweek")
+        bank = model_context.get("bank")
+        free_transfers = model_context.get("free_transfers")
+        current_squad = model_context.get("current_squad", [])
         blended_players = model_context.get("blended_players", [])
 
         player_summaries = []
         for p in blended_players[:15]:
+            price_m = float(p.get("price", 0.0) or 0.0)
             player_summaries.append(
                 f"- {p['player_name']} ({p['team']}, {p['position']}): "
-                f"ELO={p['elo_score']:.1f}, AIrsenal={p['airsenal_predicted_points']:.1f}"
+                f"£{price_m:.1f}m, ELO={p['elo_score']:.1f}, AIrsenal={p['airsenal_predicted_points']:.1f}"
             )
         players_text = "\n".join(player_summaries) if player_summaries else "(no player data available)"
+
+        squad_summaries = []
+        for p in current_squad[:15]:
+            id_bits = []
+            if p.get("player_id") is not None:
+                id_bits.append(f"AIrsenal ID={p['player_id']}")
+            id_bits.append(f"FPL ID={p['fpl_api_id']}")
+            squad_summaries.append(
+                f"- {p['player_name']} [{', '.join(id_bits)}] ({p['team']}, {p['position']}): "
+                f"price=£{p['price']:.1f}m, current xPts={p['x_pts']:.1f}, "
+                f"ELO={p['elo_score']:.1f}, AIrsenal={p['airsenal_predicted_points']:.1f}"
+            )
+        current_squad_text = "\n".join(squad_summaries) if squad_summaries else "(current squad not provided)"
 
         weight_instruction = ""
         if elo_weight > 0 and airsenal_weight > 0:
@@ -77,15 +97,40 @@ class CopilotGeminiAdapter:
                 "Focus on players with the highest projected points."
             )
 
+        bank_line = f"- Available bank: £{bank:.1f}m\n" if bank is not None else "- Available bank: not provided\n"
+        free_transfers_line = (
+            f"- Free transfers remaining: {free_transfers}\n"
+            if free_transfers is not None
+            else "- Free transfers remaining: not provided\n"
+        )
+        opt_text = format_airsenal_optimization_text(model_context)
+
         context_json = json.dumps(model_context, separators=(",", ":"), sort_keys=True)
         return (
             "ROLE: You are a football analytics assistant for FPL Copilot. "
             "You must only use the provided context and never fabricate hidden sources.\n\n"
+            "TRANSFER CONSTRAINTS:\n"
+            f"- Target gameweek: {gameweek if gameweek is not None else 'not provided'}\n"
+            f"{bank_line}"
+            f"{free_transfers_line}"
+            "- Every transfer OUT must come from CURRENT SQUAD.\n"
+            "- Recommend affordable moves only, using the stated bank plus the outgoing player's price.\n"
+            "- Prefer recommendations that fit within the remaining free transfers; if a move likely requires a hit, say so explicitly.\n"
+            "- Use exact player IDs from the supplied context when available.\n\n"
+            "CURRENT SQUAD:\n"
+            f"{current_squad_text}\n\n"
+            "AIRSENAL OPTIMIZATION (latest transfer_suggestion run for this team; same data as "
+            "gw_<GW>_optimization_<FPL_TEAM_ID>.json):\n"
+            f"{opt_text}\n"
+            "Use this as a reference plan from AIrsenal's tree-search optimizer; reconcile with "
+            "ELO/AIrsenal blend and prices. Do not invent extra transfers not implied by context.\n\n"
             "DATA SOURCES:\n"
             "1. ELO SCORES — measure team strength adjusted for player position. "
             "Higher ELO = player benefits from stronger team context.\n"
             "2. AIRSENAL PREDICTIONS — ML-projected points for the upcoming gameweek. "
-            "Higher = more expected FPL points.\n\n"
+            "Higher = more expected FPL points.\n"
+            "3. PRICE — current FPL list price in £m (from AIrsenal DB snapshot for the target gameweek). "
+            "Use this for transfer IN affordability with bank + sale price.\n\n"
             f"{weight_instruction}\n\n"
             "TOP PLAYERS (ELO + AIrsenal):\n"
             f"{players_text}\n\n"
@@ -96,7 +141,10 @@ class CopilotGeminiAdapter:
             "2. CAPTAIN PICK: Recommend a captain based on the blended assessment of ELO and AIrsenal. "
             "The ideal captain combines high team strength (ELO) with high projected output (AIrsenal).\n"
             "3. EXPLAIN REASONING: Every recommendation must include a clear 'reason' field "
-            "that references specific ELO scores and/or AIrsenal predictions from the data.\n\n"
+            "that references specific ELO scores and/or AIrsenal predictions from the data.\n"
+            "4. PROJECTED_POINTS_DELTA: For each transfer, set this to the expected GW xPts gain "
+            "using AIrsenal predicted points from blended_players for IN minus OUT (same gameweek). "
+            "If a player is missing from blended_players, use 0 for that side.\n\n"
             "OUTPUT POLICY: Return exactly one strict JSON object conforming to this schema and no markdown/text.\n"
             "{\n"
             '  "core": {"summary": "string", "confidence": 0.0},\n'
@@ -259,7 +307,7 @@ class CopilotGeminiAdapter:
                     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
                     {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
                 ],
-                "max_output_tokens": 2048,
+                "max_output_tokens": 50000,
             },
             "timeout": self.config.timeout_seconds,
         }
@@ -269,6 +317,49 @@ class CopilotGeminiAdapter:
             request.pop("timeout", None)
             response = self.client.models.generate_content(**request)
         return self._extract_text(response)
+
+    def _invoke_chat_plain_text(self, prompt: str) -> str:
+        """Free-form reply for Ask Copilot follow-up (not structured hybrid JSON)."""
+        request = {
+            "model": self.config.model_name,
+            "contents": prompt,
+            "config": {
+                "temperature": 0.45,
+                "max_output_tokens": 4096,
+                "safety_settings": [
+                    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+                    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+                ],
+            },
+            "timeout": self.config.timeout_seconds,
+        }
+        try:
+            response = self.client.models.generate_content(**request)
+        except TypeError:
+            request.pop("timeout", None)
+            response = self.client.models.generate_content(**request)
+        return self._extract_text(response)
+
+    def generate_copilot_chat_reply(
+        self,
+        *,
+        system_prompt: str,
+        prior_messages: list[dict[str, str]],
+        user_message: str,
+    ) -> str:
+        lines = [system_prompt, "", "--- conversation ---"]
+        for m in prior_messages:
+            role = m.get("role", "")
+            content = (m.get("content") or "").strip()
+            if not content:
+                continue
+            label = "User" if role == "user" else "Assistant"
+            lines.append(f"{label}: {content}")
+        lines.append(f"User: {user_message}")
+        full_prompt = "\n".join(lines)
+        return self._invoke_chat_plain_text(full_prompt)
 
     def _validate_hybrid_payload(
         self,

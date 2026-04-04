@@ -15,7 +15,17 @@ from src.main import _worker_loop, WORKER_IDLE_SLEEP
 
 
 class _AssemblerOk:
-    def assemble_model_context(self, *, source_weights, player_name_contains=None, gameweek=None):
+    def assemble_model_context(
+        self,
+        *,
+        source_weights,
+        player_name_contains=None,
+        gameweek=None,
+        bank=None,
+        free_transfers=None,
+        current_squad=None,
+        fpl_team_id=None,
+    ):
         return {
             "schema_version": "1.0",
             "weights": dict(source_weights),

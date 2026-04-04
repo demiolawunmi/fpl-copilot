@@ -57,6 +57,10 @@ class CopilotEloLlmAssembler:
         source_weights: Mapping[str, float],
         player_name_contains: str | None = None,
         gameweek: int | None = None,
+        bank: float | None = None,
+        free_transfers: int | None = None,
+        current_squad: list[dict[str, Any]] | None = None,
+        fpl_team_id: int | None = None,
     ) -> dict[str, Any]:
         weights = _validate_source_weights(source_weights)
 
@@ -72,22 +76,33 @@ class CopilotEloLlmAssembler:
 
         all_player_ids = set(elo_by_id.keys()) | set(airsenal_by_id.keys())
 
+        price_by_id = self.elo_scorer.get_player_prices_for_ids(
+            sorted(all_player_ids),
+            gameweek=gameweek,
+        )
+
         blended_players: list[dict[str, Any]] = []
         for pid in sorted(all_player_ids):
             elo_entry = elo_by_id.get(pid, {})
             airsenal_entry = airsenal_by_id.get(pid, {})
 
             player_name = elo_entry.get("player_name") or airsenal_entry.get("player_name", "")
+            fpl_api_id = elo_entry.get("fpl_api_id")
+            if fpl_api_id is None:
+                fpl_api_id = airsenal_entry.get("fpl_api_id")
             team = elo_entry.get("team", "")
             position = elo_entry.get("position", "")
             elo_score = elo_entry.get("elo_score", 0)
             airsenal_predicted_points = airsenal_entry.get("predicted_points", 0)
+            price_m = float(price_by_id.get(pid, 0.0))
 
             blended_players.append({
                 "player_id": pid,
+                "fpl_api_id": fpl_api_id,
                 "player_name": player_name,
                 "team": team,
                 "position": position,
+                "price": price_m,
                 "elo_score": elo_score,
                 "airsenal_predicted_points": airsenal_predicted_points,
             })
@@ -99,13 +114,59 @@ class CopilotEloLlmAssembler:
                 if filter_lower in p["player_name"].lower()
             ]
 
+        blended_by_fpl_id = {
+            int(p["fpl_api_id"]): p
+            for p in blended_players
+            if p.get("fpl_api_id") is not None
+        }
+        normalized_current_squad: list[dict[str, Any]] = []
+        for squad_player in current_squad or []:
+            fpl_api_id = squad_player.get("fpl_api_id")
+            if fpl_api_id is None:
+                continue
+            try:
+                normalized_fpl_api_id = int(fpl_api_id)
+            except (TypeError, ValueError):
+                continue
+
+            matched_blended = blended_by_fpl_id.get(normalized_fpl_api_id, {})
+            squad_price = float(squad_player.get("price", 0.0) or 0.0)
+            blended_price = float(matched_blended.get("price", 0.0) or 0.0)
+            normalized_current_squad.append({
+                "player_id": matched_blended.get("player_id"),
+                "fpl_api_id": normalized_fpl_api_id,
+                "player_name": squad_player.get("player_name") or matched_blended.get("player_name", ""),
+                "team": squad_player.get("team") or matched_blended.get("team", ""),
+                "position": squad_player.get("position") or matched_blended.get("position", ""),
+                "price": squad_price if squad_price > 0 else blended_price,
+                "x_pts": float(squad_player.get("x_pts", 0.0) or 0.0),
+                "elo_score": float(matched_blended.get("elo_score", 0.0) or 0.0),
+                "airsenal_predicted_points": float(matched_blended.get("airsenal_predicted_points", 0.0) or 0.0),
+            })
+
+        airsenal_optimization: dict[str, Any] = {"available": False, "reason": "fpl_team_id_not_provided"}
+        if fpl_team_id is not None:
+            from src.services.copilot_optimization_context import load_optimization_for_team
+
+            airsenal_optimization = load_optimization_for_team(
+                self.db_path,
+                fpl_team_id=int(fpl_team_id),
+                target_gameweek=gameweek,
+            )
+
         return {
             "schema_version": "1.0",
             "weights": {
                 "elo": weights["elo"],
                 "airsenal": weights["airsenal"],
             },
+            "gameweek": gameweek,
+            "bank": None if bank is None else float(bank),
+            "free_transfers": None if free_transfers is None else int(free_transfers),
+            "fpl_team_id": fpl_team_id,
             "sources": list(_EXPECTED_SOURCES),
             "player_name_contains": player_name_contains,
+            "current_squad": normalized_current_squad,
             "blended_players": blended_players,
+            "airsenal_optimization": airsenal_optimization,
         }

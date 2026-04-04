@@ -19,7 +19,17 @@ def _service(tmp_path: Path) -> CopilotJobService:
 
 
 class _AssemblerOk:
-    def assemble_model_context(self, *, source_weights, player_name_contains=None, gameweek=None):
+    def assemble_model_context(
+        self,
+        *,
+        source_weights,
+        player_name_contains=None,
+        gameweek=None,
+        bank=None,
+        free_transfers=None,
+        current_squad=None,
+        fpl_team_id=None,
+    ):
         return {
             "schema_version": "1.0",
             "weights": dict(source_weights),
@@ -34,6 +44,14 @@ class _AdapterOk:
             "schema_version": schema_version,
             "correlation_id": correlation_id,
             "core": {"summary": "Ready", "confidence": 0.81},
+            "recommended_transfers": [],
+            "ask_copilot": {"answer": "ok", "rationale": [], "confidence": 0.7},
+            "degraded_mode": {
+                "is_degraded": False,
+                "code": None,
+                "message": None,
+                "fallback_used": False,
+            },
         }
 
 

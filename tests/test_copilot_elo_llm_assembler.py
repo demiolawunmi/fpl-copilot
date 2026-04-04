@@ -11,17 +11,17 @@ from src.services.copilot_elo_llm_assembler import CopilotEloLlmAssembler
 
 def _make_elo_scores():
     return [
-        {"player_id": 101, "player_name": "Saka", "team": "ARS", "position": "MID", "elo_score": 1650.0},
-        {"player_id": 202, "player_name": "Haaland", "team": "MCI", "position": "FWD", "elo_score": 1850.5},
-        {"player_id": 303, "player_name": "Palmer", "team": "CHE", "position": "MID", "elo_score": 1580.0},
+        {"player_id": 101, "fpl_api_id": 16, "player_name": "Saka", "team": "ARS", "position": "MID", "elo_score": 1650.0},
+        {"player_id": 202, "fpl_api_id": 355, "player_name": "Haaland", "team": "MCI", "position": "FWD", "elo_score": 1850.5},
+        {"player_id": 303, "fpl_api_id": 233, "player_name": "Palmer", "team": "CHE", "position": "MID", "elo_score": 1580.0},
     ]
 
 
 def _make_airsenal_predictions():
     return [
-        {"player_id": 101, "player_name": "Saka", "predicted_points": 8.0},
-        {"player_id": 202, "player_name": "Haaland", "predicted_points": 11.0},
-        {"player_id": 404, "player_name": "Salah", "predicted_points": 9.5},
+        {"player_id": 101, "fpl_api_id": 16, "player_name": "Saka", "predicted_points": 8.0},
+        {"player_id": 202, "fpl_api_id": 355, "player_name": "Haaland", "predicted_points": 11.0},
+        {"player_id": 404, "fpl_api_id": 381, "player_name": "Salah", "predicted_points": 9.5},
     ]
 
 
@@ -39,8 +39,12 @@ def test_happy_path_blend_elo_07_airsenal_03():
 
     assert context["schema_version"] == "1.0"
     assert context["weights"] == {"elo": 0.7, "airsenal": 0.3}
+    assert context["gameweek"] is None
+    assert context["bank"] is None
+    assert context["free_transfers"] is None
     assert context["sources"] == ["elo", "airsenal"]
     assert context["player_name_contains"] is None
+    assert context["current_squad"] == []
 
     players = context["blended_players"]
     # All 4 unique players from both sources
@@ -49,6 +53,7 @@ def test_happy_path_blend_elo_07_airsenal_03():
     # Haaland: elo=1850.5, airsenal=11.0
     haaland = next(p for p in players if p["player_id"] == 202)
     assert haaland["player_name"] == "Haaland"
+    assert haaland["fpl_api_id"] == 355
     assert haaland["team"] == "MCI"
     assert haaland["position"] == "FWD"
     assert haaland["elo_score"] == 1850.5
@@ -57,6 +62,7 @@ def test_happy_path_blend_elo_07_airsenal_03():
     # Salah: only in airsenal, elo_score should be 0
     salah = next(p for p in players if p["player_id"] == 404)
     assert salah["player_name"] == "Salah"
+    assert salah["fpl_api_id"] == 381
     assert salah["elo_score"] == 0
     assert salah["airsenal_predicted_points"] == 9.5
 
@@ -187,12 +193,57 @@ def test_schema_structure_matches_contract():
 
     # Top-level keys
     assert set(context.keys()) == {
-        "schema_version", "weights", "sources", "player_name_contains", "blended_players"
+        "schema_version", "weights", "gameweek", "bank", "free_transfers",
+        "sources", "player_name_contains", "current_squad", "blended_players",
+        "fpl_team_id", "airsenal_optimization",
     }
 
     # Player-level keys
     player = context["blended_players"][0]
     assert set(player.keys()) == {
-        "player_id", "player_name", "team", "position",
-        "elo_score", "airsenal_predicted_points",
+        "player_id", "fpl_api_id", "player_name", "team", "position",
+        "price", "elo_score", "airsenal_predicted_points",
     }
+
+
+def test_current_squad_is_enriched_from_blended_players():
+    assembler = CopilotEloLlmAssembler(db_path=":memory:")
+
+    with (
+        patch.object(assembler.elo_scorer, "get_player_elo_scores", return_value=_make_elo_scores()),
+        patch.object(assembler.airsenal_extractor, "get_player_predictions", return_value=_make_airsenal_predictions()),
+    ):
+        context = assembler.assemble_model_context(
+            source_weights={"elo": 0.7, "airsenal": 0.3},
+            gameweek=31,
+            bank=1.4,
+            free_transfers=2,
+            current_squad=[
+                {
+                    "fpl_api_id": 16,
+                    "player_name": "Saka",
+                    "team": "Arsenal",
+                    "position": "MID",
+                    "price": 10.2,
+                    "x_pts": 8.0,
+                },
+                {
+                    "fpl_api_id": 381,
+                    "player_name": "Salah",
+                    "team": "Liverpool",
+                    "position": "MID",
+                    "price": 14.0,
+                    "x_pts": 9.5,
+                },
+            ],
+        )
+
+    assert context["gameweek"] == 31
+    assert context["bank"] == pytest.approx(1.4)
+    assert context["free_transfers"] == 2
+    assert len(context["current_squad"]) == 2
+
+    saka = next(player for player in context["current_squad"] if player["fpl_api_id"] == 16)
+    assert saka["player_id"] == 101
+    assert saka["elo_score"] == pytest.approx(1650.0)
+    assert saka["airsenal_predicted_points"] == pytest.approx(8.0)

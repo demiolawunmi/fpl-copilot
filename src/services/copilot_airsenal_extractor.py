@@ -33,6 +33,7 @@ class CopilotAirsenalExtractor:
                 """
                 SELECT
                     pp.player_id,
+                    p.fpl_api_id,
                     COALESCE(p.display_name, p.name) AS player_name,
                     SUM(pp.predicted_points) AS predicted_points
                 FROM player_prediction pp
@@ -47,6 +48,7 @@ class CopilotAirsenalExtractor:
         return [
             {
                 "player_id": row["player_id"],
+                "fpl_api_id": row["fpl_api_id"],
                 "player_name": row["player_name"],
                 "predicted_points": float(row["predicted_points"]),
             }
