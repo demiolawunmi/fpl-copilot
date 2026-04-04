@@ -4,6 +4,7 @@ import sys
 import time
 import threading
 from pathlib import Path
+from unittest.mock import MagicMock
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -14,7 +15,7 @@ import src.main as main_module
 from src.main import app, _worker_loop
 from src.services.copilot_job_service import CopilotJobService
 from src.services.copilot_job_repository import CopilotJobRepository
-from src.services.copilot_blend_sql import CopilotSqlBlendAssembler
+from src.services.copilot_elo_llm_assembler import CopilotEloLlmAssembler
 
 
 POLL_INTERVAL = 0.5
@@ -57,33 +58,25 @@ class _StubGeminiAdapter:
 
 class _FailingGeminiAdapter:
     def generate_hybrid_payload(self, *, schema_version, correlation_id, model_context):
-        raise RuntimeError("GEMINI_API_KEY is required for Gemini adapter")
+        raise RuntimeError("LLM provider key is required for selected adapter")
 
 
-def _seed_db(db_path):
-    import sqlite3
-    con = sqlite3.connect(db_path)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS copilot_source_player_scores (
-            source TEXT NOT NULL,
-            player_id INTEGER NOT NULL,
-            player_name TEXT NOT NULL,
-            projected_points REAL NOT NULL
-        )
-    """)
-    con.execute("INSERT INTO copilot_source_player_scores VALUES ('fplcopilot', 1, 'Salah', 8.5)")
-    con.execute("INSERT INTO copilot_source_player_scores VALUES ('airsenal', 1, 'Salah', 7.2)")
-    con.execute("INSERT INTO copilot_source_player_scores VALUES ('fplcopilot', 2, 'Haaland', 9.0)")
-    con.execute("INSERT INTO copilot_source_player_scores VALUES ('airsenal', 2, 'Haaland', 8.0)")
-    con.commit()
-    con.close()
+def _make_model_context():
+    return {
+        "schema_version": "1.0",
+        "weights": {"elo": 0.6, "airsenal": 0.4},
+        "sources": ["elo", "airsenal"],
+        "blended_players": [
+            {"player_id": 1, "player_name": "Salah", "team": "LIV", "position": "MID", "elo_score": 1700.0, "airsenal_predicted_points": 8.5},
+            {"player_id": 2, "player_name": "Haaland", "team": "MCI", "position": "FWD", "elo_score": 1850.5, "airsenal_predicted_points": 11.0},
+        ],
+    }
 
 
 def _make_service(tmp_path, gemini_adapter):
-    db_path = str(tmp_path / "test.db")
-    _seed_db(db_path)
-    repo = CopilotJobRepository(db_path)
-    assembler = CopilotSqlBlendAssembler(db_path)
+    repo = CopilotJobRepository(tmp_path / "jobs.db")
+    assembler = MagicMock(spec=CopilotEloLlmAssembler)
+    assembler.assemble_model_context.return_value = _make_model_context()
     return CopilotJobService(
         repository=repo,
         assembler=assembler,
@@ -115,7 +108,7 @@ def test_happy_path_submit_poll_completed(tmp_path, monkeypatch):
             json={
                 "schema_version": "1.0",
                 "correlation_id": "task4-happy",
-                "source_weights": {"fplcopilot": 0.6, "airsenal": 0.4},
+                "source_weights": {"elo": 0.6, "airsenal": 0.4},
                 "task": "hybrid",
                 "force_refresh": False,
             },
@@ -166,7 +159,7 @@ def test_failure_path_submit_poll_failed(tmp_path, monkeypatch):
             json={
                 "schema_version": "1.0",
                 "correlation_id": "task4-fail",
-                "source_weights": {"fplcopilot": 0.5, "airsenal": 0.5},
+                "source_weights": {"elo": 0.5, "airsenal": 0.5},
                 "task": "hybrid",
                 "force_refresh": True,
             },
@@ -179,11 +172,11 @@ def test_failure_path_submit_poll_failed(tmp_path, monkeypatch):
 
         job = _poll_until_terminal(client, job_id)
 
-        assert job["status"] == "failed"
-        assert job["error"] is not None
-        assert job["error"]["error"]["code"] in ("JOB_FAILED", "VALIDATION_ERROR")
-        assert "message" in job["error"]["error"]
-        assert job["result"] is None
+        assert job["status"] == "completed"
+        assert job["result"] is not None
+        assert job["result"]["degraded_mode"]["is_degraded"] is True
+        assert job["result"]["degraded_mode"]["fallback_used"] is True
+        assert job["error"] is None
 
         evidence_path = Path(__file__).resolve().parents[2] / ".sisyphus" / "evidence" / "task-4-api-transition-error.txt"
         evidence_path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,10 +184,8 @@ def test_failure_path_submit_poll_failed(tmp_path, monkeypatch):
             f"POST /api/copilot/blend-jobs → {response.status_code}\n"
             f"Job ID: {job_id}\n"
             f"Final status: {job['status']}\n"
-            f"Error code: {job['error']['error']['code']}\n"
-            f"Error message: {job['error']['error']['message']}\n"
-            f"Retryable: {job['error']['error']['retryable']}\n"
-            f"Result is None: {job['result'] is None}\n"
+            f"Degraded mode: {json.dumps(job['result']['degraded_mode'])}\n"
+            f"Fallback used: {job['result']['degraded_mode']['fallback_used']}\n"
         )
     finally:
         shutdown_event.set()

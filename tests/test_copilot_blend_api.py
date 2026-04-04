@@ -69,7 +69,7 @@ def test_submit_blend_job_returns_202_accepted_payload(client: TestClient) -> No
         json={
             "schema_version": "1.0",
             "correlation_id": "corr-submit",
-            "source_weights": {"fplcopilot": 0.6, "airsenal": 0.4},
+            "source_weights": {"elo": 0.6, "airsenal": 0.4},
             "task": "hybrid",
             "force_refresh": False,
         },
@@ -90,7 +90,7 @@ def test_submit_blend_job_invalid_payload_returns_422(client: TestClient) -> Non
         json={
             "schema_version": "1.0",
             "correlation_id": "corr-bad",
-            "source_weights": {"fplcopilot": 0.3, "airsenal": 0.3},
+            "source_weights": {"elo": 0.3, "airsenal": 0.3},
             "task": "hybrid",
         },
     )
