@@ -10,7 +10,7 @@ env/
 .venv/
 .env
 .env.*
-.env.local
+*.env.local
 
 # Distribution / packaging
 build/
