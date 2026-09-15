@@ -51,7 +51,7 @@ def build_copilot_chat_system_prompt(
 
 def get_copilot_llm_adapter() -> CopilotGeminiAdapter | CopilotOpenRouterAdapter:
     """Same provider selection as ``CopilotJobService.from_dependencies``."""
-    provider = os.environ.get("LLM_PROVIDER", "gemini").strip().lower()
+    provider = os.environ.get("LLM_PROVIDER", "openrouter").strip().lower()
     if provider == "gemini":
         return CopilotGeminiAdapter()
     if provider == "openrouter":

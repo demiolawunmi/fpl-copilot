@@ -911,6 +911,14 @@ def main() -> None:
     ap.add_argument("--db", default="data/airsenal/data.db", help="Path to SQLite DB (AIRSENAL_DB_FILE).")
     ap.add_argument("--out", default="data/api", help="Output directory for JSON exports.")
     ap.add_argument("--gw", default="auto", help="'auto' or an integer GW to export.")
+    ap.add_argument(
+        "--season",
+        default=os.environ.get("AIRSENAL_SEASON", "").strip() or None,
+        help=(
+            "Season override (e.g. 2627). Defaults to AIRSENAL_SEASON env var, "
+            "then MAX(season) inference from the DB."
+        ),
+    )
     ap.add_argument("--team-id", type=int, default=None, help="FPL team id (optional; improves transfer pairing).")
     args = ap.parse_args()
 
@@ -939,8 +947,10 @@ def main() -> None:
     current_season = infer_current_season(con)
 
     # For 'global' files, prefer current season; for per-GW files, use the GW's season.
-    season_global = current_season
-    season_target = season_for_gw
+    season_global = args.season or current_season
+    season_target = args.season or season_for_gw
+    if args.season:
+        log(f"season override active: {args.season}")
 
     export_predictions(con, outdir, gw, season_target)
     export_fixtures_by_player(con, outdir, gw, season_target)

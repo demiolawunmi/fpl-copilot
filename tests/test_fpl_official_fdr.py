@@ -177,11 +177,76 @@ class TestOfficialFplEndpointIntegration:
     def client(self):
         return TestClient(app)
 
+    @staticmethod
+    def _mc_vs_palace_fixture() -> dict | None:
+        """Current-season fixture row for Man City (H) vs Crystal Palace."""
+        import json
+        import os
+
+        path = os.path.join(os.path.dirname(__file__), "..", "data", "api", "fixtures.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                fixtures = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+        for fx in fixtures:
+            if fx.get("home_team") == "MCI" and fx.get("away_team") == "CRY":
+                return fx
+        return None
+
+    @classmethod
+    def _mc_vs_palace_fixture_id(cls) -> int | None:
+        fx = cls._mc_vs_palace_fixture()
+        return int(fx["fixture_id"]) if fx else None
+
+    @staticmethod
+    def _team_id_by_code() -> dict[str, int]:
+        import json
+        import os
+
+        path = os.path.join(os.path.dirname(__file__), "..", "data", "api", "teams.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                teams = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return {t["name"]: int(t["team_id"]) for t in teams if t.get("name")}
+
+    @classmethod
+    def _official_sample_for(cls, fx: dict) -> list[dict]:
+        """Official-FPL-style row matching the local fixture (hits by-id lookup)."""
+        ids = cls._team_id_by_code()
+        return [
+            {
+                "id": int(fx["fixture_id"]),
+                "event": fx.get("gameweek"),
+                "kickoff_time": fx.get("date"),
+                "team_h": ids.get(fx.get("home_team"), 0),
+                "team_a": ids.get(fx.get("away_team"), 0),
+                "team_h_difficulty": 5,
+                "team_a_difficulty": 2,
+                "finished": False,
+                "started": False,
+                "team_h_score": None,
+                "team_a_score": None,
+            }
+        ]
+
     def test_post_fixture_includes_official_when_mocked(self, client: TestClient):
-        with patch("src.services.fpl_official_fdr.fetch_fpl_fixtures", return_value=SAMPLE_RAW):
+        fx = self._mc_vs_palace_fixture()
+        assert fx is not None, "No MCI vs CRY fixture in data/api/fixtures.json"
+        with patch(
+            "src.services.fpl_official_fdr.fetch_fpl_fixtures",
+            return_value=self._official_sample_for(fx),
+        ):
             r = client.post(
                 "/api/fdr/fixture",
-                json={"fixture_id": 1, "team": "Man City", "opponent": "Crystal Palace", "is_home": True},
+                json={
+                    "fixture_id": int(fx["fixture_id"]),
+                    "team": "Man City",
+                    "opponent": "Crystal Palace",
+                    "is_home": True,
+                },
             )
         assert r.status_code == 200, r.text
         body = r.json()
@@ -194,10 +259,12 @@ class TestOfficialFplEndpointIntegration:
         assert "overall_fdr" in body["fdr"]
 
     def test_post_fpl_failure_still_returns_custom_fdr(self, client: TestClient):
+        fixture_id = self._mc_vs_palace_fixture_id()
+        assert fixture_id is not None, "No MCI vs CRY fixture in data/api/fixtures.json"
         with patch("src.services.fpl_official_fdr.fetch_fpl_fixtures", return_value=[]):
             r = client.post(
                 "/api/fdr/fixture",
-                json={"fixture_id": 1, "team": "Man City", "opponent": "Crystal Palace", "is_home": True},
+                json={"fixture_id": fixture_id, "team": "Man City", "opponent": "Crystal Palace", "is_home": True},
             )
         assert r.status_code == 200
         body = r.json()

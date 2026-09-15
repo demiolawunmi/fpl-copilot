@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# Usage: source scripts/backend.sh
+# Usage: source scripts/backend.sh   (or run directly: bash scripts/backend.sh)
+# Safe to source in bash AND zsh; strict shell options are restored before
+# the server starts so they never leak into your interactive terminal.
 set -euo pipefail
 
 
-if [[ -f "$PWD/main.py" && -f "$PWD/scripts/backend.sh" ]]; then
+# --- determine repo root (works sourced/executed, bash/zsh) ---
+SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
+if [[ -n "$SCRIPT_PATH" && -f "$SCRIPT_PATH" ]]; then
+  REPO_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd -P)"
+elif [[ -f "$PWD/src/main.py" && -f "$PWD/scripts/backend.sh" ]]; then
   REPO_ROOT="$(cd "$PWD" && pwd -P)"
-elif [[ "$(basename "$PWD")" == "scripts" && -f "$PWD/../main.py" ]]; then
-  REPO_ROOT="$(cd "$PWD/.." && pwd -P)"
-elif [[ -n "${BASH_SOURCE[0]-}" ]]; then
-  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 else
   echo "❌ Could not determine repo root."
   echo "Run this from the repo root with: source scripts/backend.sh"
@@ -29,9 +31,9 @@ fi
 
 echo ""
 echo "🧠 LLM Provider Setup"
-printf "Provider [gemini/openrouter] (default: ${LLM_PROVIDER:-gemini}): "
-read -r llm_provider
-llm_provider="${llm_provider:-${LLM_PROVIDER:-gemini}}"
+printf "Provider [gemini/openrouter] (default: ${LLM_PROVIDER:-openrouter}): "
+read -r llm_provider || true
+llm_provider="${llm_provider:-${LLM_PROVIDER:-openrouter}}"
 llm_provider="$(echo "$llm_provider" | tr '[:upper:]' '[:lower:]')"
 
 if [[ "$llm_provider" != "gemini" && "$llm_provider" != "openrouter" ]]; then
@@ -53,6 +55,7 @@ if [[ "$LLM_PROVIDER" == "openrouter" ]]; then
   echo "🔎 Fetching top 10 free OpenRouter models..."
 
   models_json="$(curl -sS https://openrouter.ai/api/v1/models || true)"
+  free_models=""
   if [[ -n "$models_json" ]]; then
     free_models="$(python3 - <<'PY'
 import json, sys
@@ -74,7 +77,7 @@ for m in data.get("data", []):
 models = sorted(dict.fromkeys(models))[:10]
 print("\n".join(models))
 PY
-<<< "$models_json")"
+<<< "$models_json")" || true
 
     if [[ -n "$free_models" ]]; then
       echo "Available free models (top 10):"
@@ -93,7 +96,7 @@ PY
   fi
 
   printf "OpenRouter model (optional, default: ${chosen_model_default:-openrouter/free}): "
-  read -r chosen_model
+  read -r chosen_model || true
   chosen_model="${chosen_model:-${chosen_model_default:-openrouter/free}}"
   export OPENROUTER_MODEL="$chosen_model"
   echo "✅ Using OpenRouter model: $OPENROUTER_MODEL"
@@ -136,13 +139,18 @@ else
 fi
 
 printf "Host (default 127.0.0.1): "
-read -r host
+read -r host || true
 host="${host:-127.0.0.1}"
 printf "Port (default 8000): "
-read -r port
+read -r port || true
 port="${port:-8000}"
 
 cd "$REPO_ROOT"
+
+# Restore the caller's shell options: never leak `set -euo pipefail` into an
+# interactive terminal (sourcing with strict mode makes Ctrl+C / failed
+# commands close the whole shell).
+set +e +u +o pipefail 2>/dev/null || true
 
 echo "🚀 Starting FastAPI: $APP on $host:$port"
 uvicorn "$APP" --reload --app-dir "$REPO_ROOT" --host "$host" --port "$port"

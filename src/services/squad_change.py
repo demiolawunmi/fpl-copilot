@@ -95,9 +95,15 @@ def summarize_squad_changes(players: List[Dict], snapshot_date: Optional[str] = 
 
         minutes_season = float(player.get("minutes_season", 0) or 0)
         minutes_pre = float(player.get("minutes_last10_before_absence", 0) or 0)
+        minutes_recent = float(player.get("minutes_last6", 0) or 0)
         starter_prob = float(player.get("starter_probability", 0) or 0)
 
-        if minutes_season < 600 and minutes_pre < 180 and starter_prob < 0.4:
+        if (
+            minutes_season < 600
+            and minutes_pre < 180
+            and minutes_recent < 180
+            and starter_prob < 0.4
+        ):
             ignored_absences.append({
                 **debug_row,
                 "reason_counted_or_ignored": "insufficient_pre_departure_importance",

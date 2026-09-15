@@ -93,27 +93,27 @@ class TestInjuryNewsHelpers:
 
     def test_resolve_fixture_context_from_fixture_id_defaults_to_home_team(self):
         context = resolve_fixture_context(fixture_id=13)
-        assert context["fixture_id"] == 13
+        assert context["fixture_id"] == 15
         assert context["team"] == "Man City"
-        assert context["team_id"] == 13
+        assert context["team_id"] == 15
         assert context["opponent"] == "Spurs"
-        assert context["opponent_id"] == 18
+        assert context["opponent_id"] == 19
         assert context["is_home"] is True
         assert context["home_team"] == "Man City"
-        assert context["home_team_id"] == 13
+        assert context["home_team_id"] == 15
         assert context["away_team"] == "Spurs"
-        assert context["away_team_id"] == 18
+        assert context["away_team_id"] == 19
 
     def test_resolve_team_supports_team_id_string(self):
-        team = resolve_team("12")
+        team = resolve_team("14")
         assert team is not None
-        assert team["team_id"] == 12
+        assert team["team_id"] == 14
         assert team["full_name"] == "Liverpool"
 
     def test_get_next_team_fixtures_supports_alias(self):
         fixtures = get_next_team_fixtures("Tottenham", limit=2)
         assert len(fixtures) == 2
-        assert all(18 in {fixture["home_team_id"], fixture["away_team_id"]} for fixture in fixtures)
+        assert all(19 in {fixture["home_team_id"], fixture["away_team_id"]} for fixture in fixtures)
         assert fixtures == sorted(fixtures, key=lambda fixture: (fixture["date"] or "", fixture["fixture_id"]))
 
     def test_resolve_fixture_context_validates_conflicts(self):
@@ -312,7 +312,7 @@ class TestInjuryNewsApi:
         assert enriched_player["last_updated"] == "2026-03-10T00:00:00+00:00"
 
     def test_fixture_route_hydrates_swagger_placeholder_player_from_db_and_injury_news(self):
-        expected_fdr = self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=12, opponent_id=18)
+        expected_fdr = self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=14, opponent_id=19)
         request_payload = {
             "team": "Liverpool",
             "opponent": "Tottenham",
@@ -345,8 +345,8 @@ class TestInjuryNewsApi:
         body = response.json()
         assert body["fdr"] == expected_fdr
         assert body["saturated"]["snapshot_date"] is None
-        assert body["saturated"]["team_id"] == 12
-        assert body["saturated"]["opponent_id"] == 18
+        assert body["saturated"]["team_id"] == 14
+        assert body["saturated"]["opponent_id"] == 19
         assert "team_ignored_absences" in body["fdr"]
         assert "opp_ignored_absences" in body["fdr"]
 
@@ -366,7 +366,7 @@ class TestInjuryNewsApi:
         assert enriched_player["last_updated"]
 
     def test_fixture_route_auto_looks_up_team_players_when_omitted(self):
-        expected_fdr = self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=12, opponent_id=18)
+        expected_fdr = self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=14, opponent_id=19)
         request_payload = {
             "team": "Liverpool",
             "opponent": "Spurs",
@@ -382,9 +382,9 @@ class TestInjuryNewsApi:
         body = response.json()
         assert body["fdr"] == expected_fdr
         assert body["saturated"]["team"] == "Liverpool"
-        assert body["saturated"]["team_id"] == 12
+        assert body["saturated"]["team_id"] == 14
         assert body["saturated"]["opponent"] == "Spurs"
-        assert body["saturated"]["opponent_id"] == 18
+        assert body["saturated"]["opponent_id"] == 19
         assert "team_counted_absences" in body["fdr"]
         assert any(player["player_id"] == 701 for player in body["saturated"]["opp_players"])
 
@@ -395,7 +395,7 @@ class TestInjuryNewsApi:
         assert any(player["player_id"] == 701 for player in kwargs["opp_players"])
 
     def test_fixture_route_team_mode_resolves_fixture_metadata_and_aliases(self):
-        expected_fdr = self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=12, opponent_id=18)
+        expected_fdr = self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=14, opponent_id=19)
         request_payload = {
             "team": "Liverpool",
             "opponent": "Tottenham",
@@ -412,9 +412,9 @@ class TestInjuryNewsApi:
         assert body["fdr"] == expected_fdr
         assert body["saturated"]["fixture_id"] is not None
         assert body["saturated"]["home_team"] == "Liverpool"
-        assert body["saturated"]["home_team_id"] == 12
+        assert body["saturated"]["home_team_id"] == 14
         assert body["saturated"]["away_team"] == "Spurs"
-        assert body["saturated"]["away_team_id"] == 18
+        assert body["saturated"]["away_team_id"] == 19
         assert body["saturated"]["opponent"] == "Spurs"
         assert any(player["player_id"] == 701 for player in body["saturated"]["opp_players"])
 
@@ -424,7 +424,7 @@ class TestInjuryNewsApi:
         assert any(player["player_id"] == 701 for player in kwargs["opp_players"])
 
     def test_fixture_route_resolves_fixture_id_and_saturates_both_teams(self):
-        expected_fdr = self._fake_fdr_response(team="Man City", opponent="Spurs", team_id=13, opponent_id=18)
+        expected_fdr = self._fake_fdr_response(team="Man City", opponent="Spurs", team_id=15, opponent_id=19)
         request_payload = {"fixture_id": 13}
 
         with patch("src.services.fixture_fdr.compute_fixture_fdr") as mock_compute:
@@ -435,15 +435,15 @@ class TestInjuryNewsApi:
         assert response.status_code == 200
         body = response.json()
         assert body["fdr"] == expected_fdr
-        assert body["saturated"]["fixture_id"] == 13
+        assert body["saturated"]["fixture_id"] == 15
         assert body["saturated"]["home_team"] == "Man City"
-        assert body["saturated"]["home_team_id"] == 13
+        assert body["saturated"]["home_team_id"] == 15
         assert body["saturated"]["away_team"] == "Spurs"
-        assert body["saturated"]["away_team_id"] == 18
+        assert body["saturated"]["away_team_id"] == 19
         assert body["saturated"]["team"] == "Man City"
-        assert body["saturated"]["team_id"] == 13
+        assert body["saturated"]["team_id"] == 15
         assert body["saturated"]["opponent"] == "Spurs"
-        assert body["saturated"]["opponent_id"] == 18
+        assert body["saturated"]["opponent_id"] == 19
         assert body["saturated"]["is_home"] is True
         assert any(player["player_id"] == 701 for player in body["saturated"]["opp_players"])
 
@@ -464,8 +464,8 @@ class TestInjuryNewsApi:
 
     def test_team_fixtures_route_returns_next_fixture_list_for_team_alias(self):
         expected_responses = [
-            self._fake_fdr_response(team="Spurs", opponent="Liverpool", is_home=False, team_id=18, opponent_id=12),
-            self._fake_fdr_response(team="Spurs", opponent="Nott'm Forest", is_home=True, team_id=18, opponent_id=16),
+            self._fake_fdr_response(team="Spurs", opponent="Liverpool", is_home=False, team_id=19, opponent_id=14),
+            self._fake_fdr_response(team="Spurs", opponent="Nott'm Forest", is_home=True, team_id=19, opponent_id=18),
         ]
 
         with patch("src.services.fixture_fdr.compute_fixture_fdr") as mock_compute:
@@ -477,19 +477,19 @@ class TestInjuryNewsApi:
         body = response.json()
         assert isinstance(body, list)
         assert len(body) == 2
-        assert body[0]["fdr"]["team_id"] == 18
-        assert body[0]["fdr"]["opponent_id"] == 12
+        assert body[0]["fdr"]["team_id"] == 19
+        assert body[0]["fdr"]["opponent_id"] == 14
         assert body[0]["saturated"]["team"] == "Spurs"
-        assert body[0]["saturated"]["team_id"] == 18
+        assert body[0]["saturated"]["team_id"] == 19
         assert body[0]["saturated"]["opponent"] == "Liverpool"
         assert "opp_ignored_absences" in body[0]["fdr"]
         assert body[1]["saturated"]["team"] == "Spurs"
-        assert body[1]["saturated"]["team_id"] == 18
+        assert body[1]["saturated"]["team_id"] == 19
         assert body[1]["saturated"]["opponent"] == "Nott'm Forest"
         assert mock_compute.call_count == 2
 
     def test_team_fixtures_route_accepts_numeric_team_id(self):
-        expected_fdr = self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=12, opponent_id=18)
+        expected_fdr = self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=14, opponent_id=19)
 
         with patch("src.services.fixture_fdr.compute_fixture_fdr") as mock_compute:
             mock_compute.return_value = expected_fdr
@@ -500,14 +500,14 @@ class TestInjuryNewsApi:
         body = response.json()
         assert len(body) == 1
         assert body[0]["saturated"]["team"] == "Liverpool"
-        assert body[0]["saturated"]["team_id"] == 12
-        assert body[0]["fdr"]["team_id"] == 12
+        assert body[0]["saturated"]["team_id"] == 14
+        assert body[0]["fdr"]["team_id"] == 14
 
     def test_team_fixtures_route_next_3_returns_expected_structure(self):
         expected_responses = [
-            self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=12, opponent_id=18),
-            self._fake_fdr_response(team="Liverpool", opponent="Brighton", is_home=False, team_id=12, opponent_id=6),
-            self._fake_fdr_response(team="Liverpool", opponent="Fulham", is_home=True, team_id=12, opponent_id=10),
+            self._fake_fdr_response(team="Liverpool", opponent="Spurs", team_id=14, opponent_id=19),
+            self._fake_fdr_response(team="Liverpool", opponent="Brighton", is_home=False, team_id=14, opponent_id=6),
+            self._fake_fdr_response(team="Liverpool", opponent="Fulham", is_home=True, team_id=14, opponent_id=10),
         ]
 
         with patch("src.services.fixture_fdr.compute_fixture_fdr") as mock_compute:

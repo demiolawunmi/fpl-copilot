@@ -16,29 +16,6 @@ _POSITION_FACTORS: Dict[str, float] = {
     "GK": 0.8,
 }
 
-_AIRSENAL_TO_FULL_NAME: Dict[str, str] = {
-    "ARS": "Arsenal",
-    "AVL": "Aston Villa",
-    "BHA": "Brighton & Hove Albion",
-    "BOU": "Bournemouth",
-    "BRE": "Brentford",
-    "BUR": "Burnley",
-    "CHE": "Chelsea",
-    "CRY": "Crystal Palace",
-    "EVE": "Everton",
-    "FUL": "Fulham",
-    "LEE": "Leeds United",
-    "LIV": "Liverpool",
-    "MCI": "Manchester City",
-    "MUN": "Manchester United",
-    "NEW": "Newcastle United",
-    "NFO": "Nottingham Forest",
-    "SUN": "Sunderland",
-    "TOT": "Tottenham Hotspur",
-    "WHU": "West Ham United",
-    "WOL": "Wolverhampton Wanderers",
-}
-
 
 class CopilotEloScorer:
     def __init__(self, db_path: str | Path | None = None) -> None:
@@ -58,9 +35,11 @@ class CopilotEloScorer:
         return self._elo_ratings
 
     def _resolve_team_elo(self, ratings: Dict[str, float], team_code: str) -> Optional[float]:
-        from src.services.club_elo import resolve_team_elo
-        full_name = _AIRSENAL_TO_FULL_NAME.get(team_code, team_code)
-        return resolve_team_elo(ratings, full_name)
+        # Resolve via the shared teams.json → ClubElo resolver so the blend and
+        # the fixtures/FDR page can never disagree on a team's Elo.
+        from src.services.club_elo import resolve_team_elo_by_code
+
+        return resolve_team_elo_by_code(ratings, team_code)
 
     def get_player_elo_scores(self, gameweek: Optional[int] = None) -> List[Dict[str, Any]]:
         ratings = self._fetch_elo_ratings()

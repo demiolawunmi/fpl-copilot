@@ -139,7 +139,7 @@ class CopilotJobService:
         blend_assembler = assembler or CopilotEloLlmAssembler(db_path)
         adapter = gemini_adapter
         if adapter is None:
-            provider = os.environ.get("LLM_PROVIDER", "gemini").strip().lower()
+            provider = os.environ.get("LLM_PROVIDER", "openrouter").strip().lower()
             if provider == "gemini":
                 adapter = CopilotGeminiAdapter()
             elif provider == "openrouter":

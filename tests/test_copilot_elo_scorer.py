@@ -206,3 +206,42 @@ def test_default_gameweek_uses_latest(tmp_path: Path) -> None:
     # Only Palmer has GW 2 data
     assert len(results) == 1
     assert results[0]["player_name"] == "Palmer"
+
+
+def test_short_code_resolves_via_shared_teams_json(tmp_path: Path) -> None:
+    """Short codes resolve through the shared teams.json mapping.
+
+    Regression guard: the scorer used to carry its own hardcoded code→name
+    table which drifted from teams.json and silently dropped promoted clubs.
+    """
+    from src.services.club_elo import get_team_code_to_full_name
+
+    mapping = get_team_code_to_full_name()
+    assert mapping, "teams.json should define at least one team"
+    code, full_name = next(iter(mapping.items()))
+
+    db_path = tmp_path / "airsenal.db"
+    _seed_airsenal_db(db_path)
+    con = sqlite3.connect(str(db_path))
+    con.execute(
+        "INSERT INTO player (player_id, fpl_api_id, name, display_name, opta_code) "
+        "VALUES (6, 606, 'Test Striker', 'Striker', 'p999');"
+    )
+    con.execute(
+        "INSERT INTO player_attributes "
+        "(id, player_id, season, gameweek, price, team, position) "
+        "VALUES (99, 6, '2627', 5, 55, ?, 'FWD');",
+        (code,),
+    )
+    con.commit()
+    con.close()
+
+    scorer = CopilotEloScorer(db_path=str(db_path))
+    scorer._elo_ratings = {full_name: 1700.0}
+
+    results = scorer.get_player_elo_scores(gameweek=5)
+
+    assert len(results) == 1
+    assert results[0]["team"] == code
+    assert results[0]["elo_score"] == pytest.approx(1700.0 * 1.2)
+

@@ -15,6 +15,7 @@ the custom Elo-based metrics; they are exposed separately on the saturated paylo
 from __future__ import annotations
 
 import json
+import ssl
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -24,6 +25,16 @@ import urllib.request
 FPL_FIXTURES_URL = "https://fantasy.premierleague.com/api/fixtures/"
 
 CACHE_TTL_SECONDS = 3600
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """SSL context with certifi CAs (Framework Pythons on macOS lack system certs)."""
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
 
 _fetch_ts: float = 0.0
 _cached_raw: List[Dict[str, Any]] = []
@@ -47,7 +58,7 @@ def fetch_fpl_fixtures() -> List[Dict[str, Any]]:
             FPL_FIXTURES_URL,
             headers={"User-Agent": "FPLCopilot/1.0 (fixture difficulty)"},
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=_ssl_context()) as resp:
             body = resp.read().decode("utf-8")
         data = json.loads(body)
         if not isinstance(data, list):
