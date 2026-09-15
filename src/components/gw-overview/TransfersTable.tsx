@@ -1,14 +1,13 @@
+import type { Transfer } from '../../data/gwOverviewMocks';
 import {
   Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Th,
-  Thead,
-  Tr,
-} from '@chakra-ui/react';
-import type { Transfer } from '../../data/gwOverviewMocks';
-import { DashboardCard, DashboardHeader } from '../ui/dashboard';
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 interface Props {
   transfers: Transfer[];
@@ -17,26 +16,26 @@ interface Props {
 const TransfersTable = ({ transfers }: Props) => (
   <DashboardCard>
     <DashboardHeader title="Transfers" />
-    <TableContainer>
-      <Table variant="simple" size="sm">
-        <Thead>
-          <Tr>
-            <Th color="slate.500">In</Th>
-            <Th color="slate.500">Out</Th>
-            <Th color="slate.500">Cost</Th>
-          </Tr>
-        </Thead>
-        <Tbody>
+    <div className="w-full overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-slate-500">In</TableHead>
+            <TableHead className="text-slate-500">Out</TableHead>
+            <TableHead className="text-slate-500">Cost</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {transfers.map((t, i) => (
-            <Tr key={i} _hover={{ bg: 'whiteAlpha.50' }}>
-              <Td color="brand.400" fontWeight="medium">{t.playerIn}</Td>
-              <Td color="red.300" fontWeight="medium">{t.playerOut}</Td>
-              <Td color="slate.400">{t.cost}</Td>
-            </Tr>
+            <TableRow key={i} className="hover:bg-white/4">
+              <TableCell className="font-medium text-emerald-400">{t.playerIn}</TableCell>
+              <TableCell className="font-medium text-red-300">{t.playerOut}</TableCell>
+              <TableCell className="text-slate-400">{t.cost}</TableCell>
+            </TableRow>
           ))}
-        </Tbody>
+        </TableBody>
       </Table>
-    </TableContainer>
+    </div>
   </DashboardCard>
 );
 

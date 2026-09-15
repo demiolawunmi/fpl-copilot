@@ -1,21 +1,7 @@
-import {
-  Button,
-  FormControl,
-  FormLabel,
-  HStack,
-  Input,
-  Modal,
-  ModalBody,
-  ModalCloseButton,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalOverlay,
-  Select,
-  Stack,
-  Switch,
-  Text,
-} from '@chakra-ui/react';
+import { FiChevronDown } from 'react-icons/fi';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { useEffect, useMemo, useState } from 'react';
 
 export const PLAYER_STATS_COLUMNS_STORAGE_KEY = 'fpl-copilot:player-stats-columns-v1';
@@ -138,6 +124,9 @@ type PlayerStatsFiltersProps = {
   presetOptions?: PlayerStatsPresetOption[];
 };
 
+const selectClassName =
+  'h-10 w-full appearance-none rounded-lg border border-white/8 bg-slate-800 px-3 pr-8 text-sm text-white hover:border-white/12 focus-visible:border-emerald-400 focus-visible:outline-none';
+
 const PlayerStatsFilters = ({
   value,
   onChange,
@@ -160,83 +149,104 @@ const PlayerStatsFilters = ({
   );
 
   return (
-    <Stack spacing={4}>
-      <Stack direction={{ base: 'column', md: 'row' }} spacing={4} align="end">
-        <FormControl>
-          <FormLabel htmlFor="player-stats-search">Search players</FormLabel>
-          <Input
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col items-end gap-4 md:flex-row">
+        <div className="w-full">
+          <label htmlFor="player-stats-search" className="mb-2 block text-sm font-medium">
+            Search players
+          </label>
+          <input
             id="player-stats-search"
             value={value.search}
             onChange={(event) => onChange({ ...value, search: event.target.value })}
             placeholder="Search by player name"
             aria-label="Search players"
+            className="h-10 w-full rounded-lg border border-white/8 bg-slate-800 px-3 text-sm text-white hover:border-white/12 placeholder:text-slate-500 focus-visible:border-emerald-400 focus-visible:shadow-[0_0_0_1px_#34d399] focus-visible:outline-none"
           />
-        </FormControl>
+        </div>
 
-        <FormControl>
-          <FormLabel htmlFor="player-stats-team">Team</FormLabel>
-          <Select
-            id="player-stats-team"
-            value={value.team}
-            onChange={(event) => onChange({ ...value, team: event.target.value })}
-            aria-label="Filter by team"
-          >
-            <option value="all">All teams</option>
-            {teamOptions.map((team) => (
-              <option key={team.value} value={team.value}>
-                {team.label}
-              </option>
-            ))}
-          </Select>
-        </FormControl>
+        <div className="w-full">
+          <label htmlFor="player-stats-team" className="mb-2 block text-sm font-medium">
+            Team
+          </label>
+          <div className="relative">
+            <select
+              id="player-stats-team"
+              value={value.team}
+              onChange={(event) => onChange({ ...value, team: event.target.value })}
+              aria-label="Filter by team"
+              className={selectClassName}
+            >
+              <option value="all">All teams</option>
+              {teamOptions.map((team) => (
+                <option key={team.value} value={team.value}>
+                  {team.label}
+                </option>
+              ))}
+            </select>
+            <FiChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
+        </div>
 
-        <FormControl>
-          <FormLabel htmlFor="player-stats-position">Position</FormLabel>
-          <Select
-            id="player-stats-position"
-            value={value.position}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                position: isPositionFilter(event.target.value) ? event.target.value : 'all',
-              })
-            }
-            aria-label="Filter by position"
-          >
-            {positionOptions.map((position) => (
-              <option key={position.value} value={position.value}>
-                {position.label}
-              </option>
-            ))}
-          </Select>
-        </FormControl>
+        <div className="w-full">
+          <label htmlFor="player-stats-position" className="mb-2 block text-sm font-medium">
+            Position
+          </label>
+          <div className="relative">
+            <select
+              id="player-stats-position"
+              value={value.position}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  position: isPositionFilter(event.target.value) ? event.target.value : 'all',
+                })
+              }
+              aria-label="Filter by position"
+              className={selectClassName}
+            >
+              {positionOptions.map((position) => (
+                <option key={position.value} value={position.value}>
+                  {position.label}
+                </option>
+              ))}
+            </select>
+            <FiChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
+        </div>
 
-        <FormControl>
-          <FormLabel htmlFor="player-stats-preset">Preset</FormLabel>
-          <Select
-            id="player-stats-preset"
-            value={value.preset}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                preset: isPresetKey(event.target.value) ? event.target.value : 'all',
-              })
-            }
-            aria-label="Filter preset"
-          >
-            {presetOptions.map((preset) => (
-              <option key={preset.key} value={preset.key}>
-                {preset.label}
-              </option>
-            ))}
-          </Select>
-        </FormControl>
-      </Stack>
+        <div className="w-full">
+          <label htmlFor="player-stats-preset" className="mb-2 block text-sm font-medium">
+            Preset
+          </label>
+          <div className="relative">
+            <select
+              id="player-stats-preset"
+              value={value.preset}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  preset: isPresetKey(event.target.value) ? event.target.value : 'all',
+                })
+              }
+              aria-label="Filter preset"
+              className={selectClassName}
+            >
+              {presetOptions.map((preset) => (
+                <option key={preset.key} value={preset.key}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+            <FiChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
+        </div>
+      </div>
 
-      <HStack justify="space-between" align="center">
-        <Text fontSize="sm" color="slate.400">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-400">
           {normalizedVisibleColumns.length} of {availableColumns.length} columns visible
-        </Text>
+        </p>
         <Button
           type="button"
           variant="outline"
@@ -246,70 +256,64 @@ const PlayerStatsFilters = ({
         >
           Customize columns
         </Button>
-      </HStack>
+      </div>
 
-      <Modal isOpen={isColumnPickerOpen} onClose={() => setIsColumnPickerOpen(false)}>
-        <ModalOverlay />
-        <ModalContent id="player-stats-column-picker">
-          <ModalHeader>Visible columns</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <Stack spacing={4}>
-              {availableColumns.map((column) => {
-                const controlId = `player-stats-column-${column.key}`;
-                const isChecked = normalizedVisibleColumns.includes(column.key);
+      <Dialog open={isColumnPickerOpen} onOpenChange={(o) => !o && setIsColumnPickerOpen(false)}>
+        <DialogContent id="player-stats-column-picker" className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Visible columns</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            {availableColumns.map((column) => {
+              const controlId = `player-stats-column-${column.key}`;
+              const isChecked = normalizedVisibleColumns.includes(column.key);
 
-                return (
-                  <FormControl
-                    key={column.key}
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="space-between"
-                  >
-                    <FormLabel htmlFor={controlId} mb="0">
-                      {column.label}
-                    </FormLabel>
-                    <Switch
-                      id={controlId}
-                      isChecked={isChecked}
-                      onChange={() => {
-                        if (!availableColumnKeys.has(column.key)) {
-                          return;
-                        }
+              return (
+                <div
+                  key={column.key}
+                  className="flex items-center justify-between"
+                >
+                  <label htmlFor={controlId} className="text-sm font-medium">
+                    {column.label}
+                  </label>
+                  <Switch
+                    id={controlId}
+                    checked={isChecked}
+                    onCheckedChange={() => {
+                      if (!availableColumnKeys.has(column.key)) {
+                        return;
+                      }
 
-                        const next = isChecked
-                          ? normalizedVisibleColumns.filter((key) => key !== column.key)
-                          : [...normalizedVisibleColumns, column.key];
-                        onVisibleColumnsChange(sanitizeVisibleColumns(next, availableColumns));
-                      }}
-                      aria-label={`Toggle ${column.label} column`}
-                    />
-                  </FormControl>
-                );
-              })}
-            </Stack>
-          </ModalBody>
-          <ModalFooter>
-            <HStack spacing={3}>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() =>
-                  onVisibleColumnsChange(
-                    sanitizeVisibleColumns(PLAYER_STATS_DEFAULT_VISIBLE_COLUMNS, availableColumns)
-                  )
-                }
-              >
-                Reset defaults
-              </Button>
-              <Button type="button" onClick={() => setIsColumnPickerOpen(false)}>
-                Done
-              </Button>
-            </HStack>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </Stack>
+                      const next = isChecked
+                        ? normalizedVisibleColumns.filter((key) => key !== column.key)
+                        : [...normalizedVisibleColumns, column.key];
+                      onVisibleColumnsChange(sanitizeVisibleColumns(next, availableColumns));
+                    }}
+                    aria-label={`Toggle ${column.label} column`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter className="bg-transparent">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() =>
+                onVisibleColumnsChange(
+                  sanitizeVisibleColumns(PLAYER_STATS_DEFAULT_VISIBLE_COLUMNS, availableColumns)
+                )
+              }
+            >
+              Reset defaults
+            </Button>
+            <Button type="button" onClick={() => setIsColumnPickerOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 };
 

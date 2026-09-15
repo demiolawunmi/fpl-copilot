@@ -1,16 +1,8 @@
-import {
-  Badge,
-  Box,
-  Button,
-  Flex,
-  HStack,
-  Icon,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
 import { FiArrowDown, FiArrowUp, FiChevronRight } from 'react-icons/fi';
 import type { RecommendedTransfer, RecommendedTransferPlayer } from '../../data/gwOverviewMocks';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 interface Props {
   transfers: RecommendedTransfer[];
@@ -24,92 +16,73 @@ const PlayerInfo = ({
   player: RecommendedTransferPlayer;
   direction: 'in' | 'out';
 }) => (
-  <HStack align="center" spacing={2.5} minW={0}>
-    <Flex
-      h={7}
-      w={7}
-      flexShrink={0}
-      align="center"
-      justify="center"
-      borderRadius="full"
-      bg={direction === 'in' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(248, 113, 113, 0.12)'}
-      color={direction === 'in' ? 'brand.400' : 'red.300'}
+  <div className="flex min-w-0 items-center gap-2.5">
+    <div
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${direction === 'in' ? 'bg-[rgba(16,185,129,0.12)] text-emerald-400' : 'bg-[rgba(248,113,113,0.12)] text-red-300'}`}
     >
-      <Icon as={direction === 'in' ? FiArrowUp : FiArrowDown} boxSize={3.5} />
-    </Flex>
-    <Box minW={0}>
-      <Text noOfLines={1} fontSize="sm" fontWeight="medium" color="white">
+      {direction === 'in' ? <FiArrowUp size={14} /> : <FiArrowDown size={14} />}
+    </div>
+    <div className="min-w-0">
+      <p className="line-clamp-1 text-sm font-medium text-white">
         {player.name}
-      </Text>
-      <Text fontSize="11px" color="slate.500">
+      </p>
+      <p className="text-[11px] text-slate-500">
         {player.team} · {player.position} · {player.price}
-      </Text>
-    </Box>
-  </HStack>
+      </p>
+    </div>
+  </div>
 );
 
 const RecommendedTransfersCard = ({ transfers, heightPx }: Props) => (
-  <DashboardCard display="flex" flexDirection="column" h={heightPx ? `${heightPx}px` : undefined}>
+  <DashboardCard
+    className="flex flex-col"
+    style={heightPx ? { height: `${heightPx}px` } : undefined}
+  >
     <DashboardHeader title="Recommended Transfers" />
 
-    <Stack spacing={0} flex="1" overflow="auto" sx={cardScrollSx}>
+    <div className="card-scroll flex flex-1 flex-col overflow-auto">
       {transfers.map((t, i) => (
-        <Box
+        <div
           key={i}
-          px={5}
-          py={4}
-          borderBottomWidth={i === transfers.length - 1 ? '0' : '1px'}
-          borderColor="whiteAlpha.100"
-          _hover={{ bg: 'whiteAlpha.50' }}
+          className={`px-5 py-4 hover:bg-white/4 ${i === transfers.length - 1 ? '' : 'border-b border-white/6'}`}
         >
-          <Flex align="center" justify="space-between" gap={4}>
-            <Stack spacing={2.5} minW={0} flex="1">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
               <PlayerInfo player={t.playerIn} direction="in" />
               <PlayerInfo player={t.playerOut} direction="out" />
-            </Stack>
+            </div>
 
-            <Stack align="center" spacing={1} flexShrink={0}>
-              <Text fontSize="10px" textTransform="uppercase" color="slate.500">
+            <div className="flex shrink-0 flex-col items-center gap-1">
+              <span className="text-[10px] uppercase text-slate-500">
                 xPts
-              </Text>
-              <Badge
-                borderRadius="lg"
-                px={2.5}
-                py={1}
-                textTransform="none"
-                bg="rgba(16, 185, 129, 0.12)"
-                color="brand.400"
-                borderWidth="1px"
-                borderColor="rgba(16, 185, 129, 0.22)"
-              >
+              </span>
+              <Badge className="rounded-lg border border-[rgba(16,185,129,0.22)] bg-[rgba(16,185,129,0.12)] px-2.5 py-1 normal-case text-emerald-400">
                 +{t.xPointsDiff.toFixed(1)}
               </Badge>
-            </Stack>
-          </Flex>
+            </div>
+          </div>
 
-          <Flex mt={3} align="center" justify="space-between" gap={3}>
-            <Text fontSize="11px" color="slate.500" lineHeight="short" noOfLines={1} flex="1">
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="line-clamp-1 flex-1 text-[11px] leading-snug text-slate-500">
               {t.rationale}
-            </Text>
+            </span>
 
-            <HStack spacing={2} flexShrink={0}>
+            <div className="flex shrink-0 items-center gap-2">
               <Button
-                size="xs"
+                size="sm"
                 variant="outline"
-                borderColor="rgba(16, 185, 129, 0.22)"
-                color="brand.400"
-                _hover={{ bg: 'rgba(16, 185, 129, 0.12)' }}
+                className="h-6 border-[rgba(16,185,129,0.22)] px-2 text-xs text-emerald-400 hover:bg-[rgba(16,185,129,0.12)]"
               >
                 Apply
               </Button>
-              <Button size="xs" variant="ghost" isDisabled color="slate.600">
+              <Button size="sm" variant="ghost" disabled className="h-6 px-2 text-xs text-slate-600">
                 <FiChevronRight size={16} />
               </Button>
-            </HStack>
-          </Flex>
-        </Box>
+            </div>
+          </div>
+        </div>
       ))}
-    </Stack>
+    </div>
   </DashboardCard>
 );
 

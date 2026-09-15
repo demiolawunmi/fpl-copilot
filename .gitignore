@@ -38,3 +38,8 @@ dist-ssr
 .windsurf/
 .agent-state/
 AGENTS.md
+
+# Visual parity screenshot artifacts
+parity-baseline/
+parity-after/
+parity-diff/

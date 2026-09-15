@@ -1,3 +1,5 @@
+import { getCdnSeasonSegment } from '../../utils/cdnSeason';
+
 /**
  * FPL JSON API base path.
  * - Dev: `/fpl-api` is proxied by Vite → `https://fantasy.premierleague.com/api` (avoids CORS during local dev).
@@ -16,8 +18,14 @@ const FPL_API_BASE = (() => {
 })();
 
 const BASE = FPL_API_BASE;
-const PL_RESOURCES = "https://resources.premierleague.com/premierleague25/photos/players";
-const PL_BADGES = "https://resources.premierleague.com/premierleague25/badges";
+
+export type PlayerPhotoSize = "110x140" | "250x250" | "60x60";
+
+// Season segment resolved at startup by `initCdnSeasonSegment()` (see utils/cdnSeason.ts).
+const plResources = () =>
+    `https://resources.premierleague.com/premierleague${getCdnSeasonSegment()}/photos/players`;
+const plBadges = () =>
+    `https://resources.premierleague.com/premierleague${getCdnSeasonSegment()}/badges`;
 
 export const fplEndpoints = {
     // Core API
@@ -30,9 +38,13 @@ export const fplEndpoints = {
     liveEvent: (gw: number) => `${BASE}/event/${gw}/live/`,
 
     // Player photos (use `code`, NOT `id`)
-    playerPhoto: (code: number | string, size: "110x140" | "250x250" | "60x60" = "110x140") =>
-        `${PL_RESOURCES}/${size}/${code}.png`,
+    playerPhoto: (code: number | string, size: PlayerPhotoSize = "110x140") =>
+        `${plResources()}/${size}/${code}.png`,
+
+    /** Grey-silhouette avatar shown when a player photo is missing (404). */
+    playerPlaceholder: (size: PlayerPhotoSize = "110x140") =>
+        `${plResources()}/${size}/placeholder.png`,
 
     // Team badges (use team `code`, NOT `id`) — PL CDN uses `/badges/{code}.svg` (no size segment).
-    teamBadge: (teamCode: number | string) => `${PL_BADGES}/${teamCode}.svg`,
+    teamBadge: (teamCode: number | string) => `${plBadges()}/${teamCode}.svg`,
 };

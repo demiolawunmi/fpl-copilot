@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Badge, Flex, HStack, Image, Stack, Text } from '@chakra-ui/react';
 import type { PlayerDetailFixture } from '../../hooks/usePlayerDetail';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 type PlayerFixturesPanelProps = {
   fixtures: PlayerDetailFixture[];
@@ -25,17 +24,17 @@ const PlayerFixturesPanel = ({ fixtures, maxItems = DEFAULT_MAX_ITEMS }: PlayerF
         description="Next opponents, venue, and fixture difficulty."
       />
 
-      <Stack px={5} py={4} spacing={3} maxH="24rem" overflowY="auto" sx={cardScrollSx}>
+      <div className="card-scroll flex max-h-96 flex-col gap-3 overflow-y-auto px-5 py-4">
         {averageDifficulty != null ? (
-          <Text fontSize="sm" color="slate.300">
+          <p className="text-sm text-slate-300">
             Next 5 outlook: {averageDifficulty.toFixed(1)} average FDR ({difficultyOutlookLabel(averageDifficulty)})
-          </Text>
+          </p>
         ) : null}
 
         {visibleFixtures.length === 0 ? (
-          <Text fontSize="sm" color="slate.400">
+          <p className="text-sm text-slate-400">
             No upcoming fixtures are available yet.
-          </Text>
+          </p>
         ) : (
           visibleFixtures.map((fixture) => {
             const style = getDifficultyStyle(normalizeDifficulty(fixture.difficulty));
@@ -43,68 +42,45 @@ const PlayerFixturesPanel = ({ fixtures, maxItems = DEFAULT_MAX_ITEMS }: PlayerF
             const kickoffLabel = formatKickoffTime(fixture.kickoff_time);
 
             return (
-              <HStack
+              <div
                 key={`${fixture.id}-${fixture.event ?? 'e'}-${fixture.kickoff_time ?? ''}`}
-                justify="space-between"
-                align="center"
-                spacing={3}
-                px={3}
-                py={2.5}
-                borderRadius="lg"
-                bg="rgba(30, 41, 59, 0.3)"
-                _hover={{ bg: 'rgba(30, 41, 59, 0.6)' }}
+                className="flex items-center justify-between gap-3 rounded-lg bg-[rgba(30,41,59,0.3)] px-3 py-2.5 hover:bg-[rgba(30,41,59,0.6)]"
               >
-                <HStack minW={0} spacing={2}>
+                <div className="flex min-w-0 items-center gap-2">
                   <OpponentBadge
                     abbr={opponentLabel}
                     badgeUrl={fixture.opponentBadgeUrl}
                   />
-                  <Text fontSize="sm" fontWeight="semibold" color="white" noOfLines={1}>
+                  <span className="truncate text-sm font-semibold text-white">
                     {opponentLabel}
-                  </Text>
-                  <Badge
-                    px={2}
-                    py={0.5}
-                    fontSize="10px"
-                    textTransform="uppercase"
-                    bg="whiteAlpha.200"
-                    color="slate.100"
-                    borderRadius="md"
-                  >
+                  </span>
+                  <span className="rounded-md bg-white/8 px-2 py-0.5 text-[10px] font-medium uppercase text-slate-100">
                     {fixture.is_home ? 'H' : 'A'}
-                  </Badge>
-                </HStack>
+                  </span>
+                </div>
 
-                <HStack spacing={2} flexShrink={0}>
+                <div className="flex shrink-0 items-center gap-2">
                   {fixture.event != null ? (
-                    <Text fontSize="xs" color="slate.500" whiteSpace="nowrap">
+                    <span className="whitespace-nowrap text-xs text-slate-500">
                       GW {fixture.event}
-                    </Text>
+                    </span>
                   ) : null}
                   {kickoffLabel ? (
-                    <Text fontSize="xs" color="slate.400" whiteSpace="nowrap">
+                    <span className="whitespace-nowrap text-xs text-slate-400">
                       {kickoffLabel}
-                    </Text>
+                    </span>
                   ) : null}
-                  <Badge
-                    px={2}
-                    py={1}
-                    fontSize="10px"
-                    textTransform="none"
-                    bg={style.bg}
-                    color={style.color}
-                    borderWidth="1px"
-                    borderColor={style.borderColor}
-                    borderRadius="md"
+                  <span
+                    className={`rounded-md border px-2 py-1 text-[10px] font-medium ${style.bg} ${style.color} ${style.borderColor}`}
                   >
                     FDR {normalizeDifficulty(fixture.difficulty)}
-                  </Badge>
-                </HStack>
-              </HStack>
+                  </span>
+                </div>
+              </div>
             );
           })
         )}
-      </Stack>
+      </div>
     </DashboardCard>
   );
 };
@@ -143,36 +119,36 @@ function formatKickoffTime(kickoffTime: string | null): string | null {
 function getDifficultyStyle(difficulty: number) {
   if (difficulty === 1) {
     return {
-      bg: 'rgba(16, 185, 129, 0.12)',
-      color: 'brand.400',
-      borderColor: 'rgba(16, 185, 129, 0.22)',
+      bg: 'bg-[rgba(16,185,129,0.12)]',
+      color: 'text-emerald-400',
+      borderColor: 'border-[rgba(16,185,129,0.22)]',
     };
   }
   if (difficulty === 2) {
     return {
-      bg: 'rgba(34, 197, 94, 0.12)',
-      color: 'green.300',
-      borderColor: 'rgba(34, 197, 94, 0.22)',
+      bg: 'bg-[rgba(34,197,94,0.12)]',
+      color: 'text-green-300',
+      borderColor: 'border-[rgba(34,197,94,0.22)]',
     };
   }
   if (difficulty === 3) {
     return {
-      bg: 'rgba(100, 116, 139, 0.12)',
-      color: 'slate.300',
-      borderColor: 'rgba(100, 116, 139, 0.22)',
+      bg: 'bg-[rgba(100,116,139,0.12)]',
+      color: 'text-slate-300',
+      borderColor: 'border-[rgba(100,116,139,0.22)]',
     };
   }
   if (difficulty === 4) {
     return {
-      bg: 'rgba(251, 146, 60, 0.12)',
-      color: 'orange.300',
-      borderColor: 'rgba(251, 146, 60, 0.22)',
+      bg: 'bg-[rgba(251,146,60,0.12)]',
+      color: 'text-orange-300',
+      borderColor: 'border-[rgba(251,146,60,0.22)]',
     };
   }
   return {
-    bg: 'rgba(248, 113, 113, 0.12)',
-    color: 'red.300',
-    borderColor: 'rgba(248, 113, 113, 0.22)',
+    bg: 'bg-[rgba(248,113,113,0.12)]',
+    color: 'text-red-300',
+    borderColor: 'border-[rgba(248,113,113,0.22)]',
   };
 }
 
@@ -180,33 +156,19 @@ function OpponentBadge({ abbr, badgeUrl }: { abbr: string; badgeUrl?: string }) 
   const [failed, setFailed] = useState(false);
   if (badgeUrl && !failed) {
     return (
-      <Image
+      <img
         src={badgeUrl}
         alt={abbr}
-        boxSize={6}
-        borderRadius="full"
-        objectFit="contain"
-        bg="whiteAlpha.50"
+        className="size-6 shrink-0 rounded-full bg-white/4 object-contain"
         loading="lazy"
-        flexShrink={0}
         onError={() => setFailed(true)}
       />
     );
   }
   return (
-    <Flex
-      boxSize={6}
-      flexShrink={0}
-      align="center"
-      justify="center"
-      borderRadius="full"
-      fontSize="7px"
-      fontWeight="bold"
-      color="white"
-      bg="slate.600"
-    >
+    <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-600 text-[7px] font-bold text-white">
       {abbr.slice(0, 3)}
-    </Flex>
+    </div>
   );
 }
 

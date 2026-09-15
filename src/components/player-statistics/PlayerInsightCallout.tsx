@@ -1,7 +1,6 @@
-import { Stack, Text } from '@chakra-ui/react';
 import type { PlayerDetailFixture } from '../../hooks/usePlayerDetail';
 import { parseStatNumber } from '../../utils/playerStatsFormat';
-import { DashboardCard, DashboardHeader } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 type PlayerInsightCalloutProps = {
   form: number | string | null | undefined;
@@ -17,11 +16,11 @@ const PlayerInsightCallout = ({ form, fixtures }: PlayerInsightCalloutProps) => 
         title="Insight"
         description="Simple stat-based cue from recent form and immediate fixture run."
       />
-      <Stack px={5} py={4} spacing={2}>
-        <Text fontSize="sm" color="slate.200" lineHeight="tall">
+      <div className="flex flex-col gap-2 px-5 py-4">
+        <p className="text-sm leading-[1.6] text-slate-200">
           {insightText}
-        </Text>
-      </Stack>
+        </p>
+      </div>
     </DashboardCard>
   );
 };

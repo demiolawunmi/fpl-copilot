@@ -1,19 +1,10 @@
 import { useMemo } from 'react';
-import {
-  Alert,
-  AlertDescription,
-  Button,
-  Container,
-  SimpleGrid,
-  Skeleton,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
 import { Link as RouterLink, useLocation, useParams } from 'react-router-dom';
 import PlayerFixturesPanel from '../components/player-statistics/PlayerFixturesPanel';
 import PlayerFormTrend from '../components/player-statistics/PlayerFormTrend';
 import PlayerHeroCard from '../components/player-statistics/PlayerHeroCard';
-import { DashboardCard } from '../components/ui/dashboard';
+import { DashboardCard } from '@/components/ui/primitives';
+import { Skeleton } from '@/components/ui/skeleton';
 import { usePlayerDetail } from '../hooks/usePlayerDetail';
 import { usePredictionsData } from '../hooks/usePredictionsData';
 
@@ -40,54 +31,45 @@ const PlayerDetailPage = () => {
   }, [element, predictions]);
 
   return (
-    <Container maxW="8xl" flex="1" px={{ base: 4, md: 6, xl: 10 }} py={{ base: 6, xl: 8 }}>
-      <Stack spacing={6}>
-        <Button
-          as={RouterLink}
+    <div className="mx-auto flex w-full max-w-[90rem] flex-1 flex-col px-4 py-6 md:px-6 xl:px-10 xl:py-8">
+      <div className="flex flex-col gap-6">
+        <RouterLink
           to={back.to}
-          alignSelf="flex-start"
-          size="sm"
-          variant="ghost"
-          color="slate.200"
-          _hover={{ bg: 'whiteAlpha.100', color: 'white' }}
+          className="inline-flex h-8 shrink-0 items-center self-start rounded-lg px-3 text-sm font-semibold text-slate-200 transition-colors hover:bg-white/6 hover:text-white"
         >
           {back.label}
-        </Button>
+        </RouterLink>
 
         {loading ? (
-          <Stack spacing={4} w="full">
-            <Skeleton height="220px" borderRadius="2xl" w="full" />
-            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} w="full">
-              <Skeleton height="280px" borderRadius="2xl" w="full" />
-              <Skeleton height="280px" borderRadius="2xl" w="full" />
-            </SimpleGrid>
-          </Stack>
+          <div className="flex w-full flex-col gap-4">
+            <Skeleton className="h-[220px] w-full rounded-2xl" />
+            <div className="grid w-full grid-cols-1 gap-4 md:grid-cols-2">
+              <Skeleton className="h-[280px] w-full rounded-2xl" />
+              <Skeleton className="h-[280px] w-full rounded-2xl" />
+            </div>
+          </div>
         ) : null}
 
         {!loading && error ? (
-          <Alert
-            status="warning"
-            borderRadius="xl"
-            bg="rgba(234, 179, 8, 0.08)"
-            borderWidth="1px"
-            borderColor="rgba(234, 179, 8, 0.2)"
+          <div
+            role="alert"
+            className="rounded-xl border bg-[rgba(234,179,8,0.08)] px-4 py-3"
+            style={{ borderColor: 'rgba(234, 179, 8, 0.2)' }}
           >
-            <AlertDescription color="yellow.300" fontSize="sm">
+            <p className="text-sm text-yellow-300">
               Couldn&apos;t load player detail. {error}
-            </AlertDescription>
-          </Alert>
+            </p>
+          </div>
         ) : null}
 
         {!loading && !error && (!element || !summary) ? (
-          <DashboardCard px={5} py={4}>
-            <Text color="slate.300" fontSize="sm">
-              Player detail is unavailable right now.
-            </Text>
+          <DashboardCard className="px-5 py-4">
+            <p className="text-sm text-slate-300">Player detail is unavailable right now.</p>
           </DashboardCard>
         ) : null}
 
         {!loading && !error && element && summary ? (
-          <Stack spacing={4} w="full">
+          <div className="flex w-full flex-col gap-4">
             <PlayerHeroCard
               key={element.id}
               element={element}
@@ -95,14 +77,14 @@ const PlayerDetailPage = () => {
               fixtures={summary.fixtures}
             />
 
-            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} w="full" alignItems="stretch">
+            <div className="grid w-full grid-cols-1 items-stretch gap-4 md:grid-cols-2">
               <PlayerFormTrend history={historySorted} />
               <PlayerFixturesPanel fixtures={summary.fixtures} />
-            </SimpleGrid>
-          </Stack>
+            </div>
+          </div>
         ) : null}
-      </Stack>
-    </Container>
+      </div>
+    </div>
   );
 };
 

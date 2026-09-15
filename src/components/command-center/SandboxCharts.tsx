@@ -1,6 +1,5 @@
-import { Box, Stack, Text } from '@chakra-ui/react';
 import type { EnhancedPlayer } from '../../data/commandCenterMocks';
-import { DashboardCard, DashboardHeader } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 interface Props {
   squad: EnhancedPlayer[];
@@ -19,35 +18,38 @@ const SandboxCharts = ({ squad }: Props) => {
   return (
     <DashboardCard>
       <DashboardHeader title="Charts & Analytics" />
-      <Stack px={5} py={4} spacing={4}>
-        <Box>
-          <Text mb={2} fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.400">
+      <div className="flex flex-col gap-4 px-5 py-4">
+        <div>
+          <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">
             Team xPts by Position
-          </Text>
-          <Stack spacing={2}>
+          </p>
+          <div className="flex flex-col gap-2">
             {(Object.entries(byPosition) as [string, number][]).map(([pos, xPts]) => {
               const pct = totalXPts > 0 ? (xPts / totalXPts) * 100 : 0;
               return (
-                <Box key={pos} display="flex" alignItems="center" gap={3}>
-                  <Text w={8} fontSize="xs" color="slate.300">{pos}</Text>
-                  <Box flex="1" h={6} bg="whiteAlpha.100" borderRadius="md" overflow="hidden" position="relative">
-                    <Box h="full" w={`${pct}%`} bg="rgba(16, 185, 129, 0.3)" borderRightWidth="2px" borderColor="brand.400" />
-                    <Text position="absolute" inset={0} display="flex" alignItems="center" justifyContent="center" fontSize="xs" fontWeight="semibold" color="white">
+                <div key={pos} className="flex items-center gap-3">
+                  <span className="w-8 text-xs text-slate-300">{pos}</span>
+                  <div className="relative h-6 flex-1 overflow-hidden rounded-md bg-white/6">
+                    <div
+                      className="h-full border-r-2 border-emerald-400 bg-[rgba(16,185,129,0.3)]"
+                      style={{ width: `${pct}%` }}
+                    />
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
                       {xPts.toFixed(1)} xPts
-                    </Text>
-                  </Box>
-                </Box>
+                    </span>
+                  </div>
+                </div>
               );
             })}
-          </Stack>
-        </Box>
+          </div>
+        </div>
 
-        <Box pt={4} borderTopWidth="1px" borderColor="whiteAlpha.100">
-          <Text fontSize="xs" color="slate.500" textAlign="center" fontStyle="italic">
+        <div className="border-t border-white/6 pt-4">
+          <p className="text-center text-xs italic text-slate-500">
             More charts coming soon: xPts trends, fixture difficulty, transfer impact
-          </Text>
-        </Box>
-      </Stack>
+          </p>
+        </div>
+      </div>
     </DashboardCard>
   );
 };

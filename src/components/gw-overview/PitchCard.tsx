@@ -1,17 +1,9 @@
 import { useState } from 'react';
-import {
-  Box,
-  Button,
-  Center,
-  Flex,
-  Image,
-  SimpleGrid,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
 import type { Player } from '../../data/gwOverviewMocks';
 import { getDifficultyColor } from '../../utils/difficulty';
-import { DashboardCard } from '../ui/dashboard';
+import { fplEndpoints } from '../../api/fpl/endpoints';
+import { Button } from '@/components/ui/button';
+import { DashboardCard } from '@/components/ui/primitives';
 
 interface Props {
   squad: Player[];
@@ -58,24 +50,39 @@ const PlayerChip = ({
     if (player.chipDifficulty !== undefined) {
       const color = getDifficultyColor(player.chipDifficulty);
       if (color === 'emerald') {
-        return { bg: 'rgba(16, 185, 129, 0.2)', borderColor: 'rgba(16, 185, 129, 0.25)', color: 'brand.400' };
+        return {
+          bg: 'bg-[rgba(16,185,129,0.2)]',
+          borderColor: 'border-[rgba(16,185,129,0.25)]',
+          color: 'text-emerald-400',
+        };
       }
       if (color === 'yellow') {
-        return { bg: 'rgba(250, 204, 21, 0.2)', borderColor: 'rgba(250, 204, 21, 0.25)', color: 'yellow.300' };
+        return {
+          bg: 'bg-[rgba(250,204,21,0.2)]',
+          borderColor: 'border-[rgba(250,204,21,0.25)]',
+          color: 'text-yellow-300',
+        };
       }
-      return { bg: 'rgba(244, 63, 94, 0.2)', borderColor: 'rgba(244, 63, 94, 0.25)', color: 'red.300' };
+      return {
+        bg: 'bg-[rgba(244,63,94,0.2)]',
+        borderColor: 'border-[rgba(244,63,94,0.25)]',
+        color: 'text-red-300',
+      };
     }
-    return { bg: 'rgba(16, 185, 129, 0.2)', borderColor: 'rgba(16, 185, 129, 0.25)', color: 'brand.400' };
+    return {
+      bg: 'bg-[rgba(16,185,129,0.2)]',
+      borderColor: 'border-[rgba(16,185,129,0.25)]',
+      color: 'text-emerald-400',
+    };
   })();
 
   const objectPos = CHIP.imgAnchor === 'top' ? 'top' : CHIP.imgAnchor === 'center' ? 'center' : 'bottom';
-  const wrapperAlign = CHIP.imgAnchor === 'top' ? 'flex-start' : CHIP.imgAnchor === 'center' ? 'center' : 'flex-end';
+  const wrapperAlign =
+    CHIP.imgAnchor === 'top' ? 'items-start' : CHIP.imgAnchor === 'center' ? 'items-center' : 'items-end';
 
   return (
-    <Box
-      position="relative"
-      w={{ base: '60px', sm: '81px' }}
-      cursor={onClick ? 'pointer' : undefined}
+    <div
+      className={`relative w-[60px] rounded-lg transition-[transform,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-blue-400 focus-visible:outline-offset-2 sm:w-[81px] ${onClick ? 'cursor-pointer' : ''} ${isSelected ? 'scale-[1.08] shadow-[0_0_0_2px_rgba(59,130,246,0.7),0_0_12px_rgba(59,130,246,0.35)]' : ''} ${onClick ? (isSelected ? 'hover:scale-[1.08]' : 'hover:scale-[1.04]') : ''}`}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
@@ -85,63 +92,66 @@ const PlayerChip = ({
           onClick();
         }
       }}
-      _focusVisible={{
-        outline: '2px solid',
-        outlineColor: 'blue.400',
-        outlineOffset: '2px',
-      }}
-      transition="transform 0.15s, box-shadow 0.15s"
-      transform={isSelected ? 'scale(1.08)' : undefined}
-      boxShadow={isSelected ? '0 0 0 2px rgba(59, 130, 246, 0.7), 0 0 12px rgba(59, 130, 246, 0.35)' : undefined}
-      borderRadius="lg"
-      _hover={onClick ? { transform: isSelected ? 'scale(1.08)' : 'scale(1.04)' } : undefined}
     >
-      <Box position="relative" overflow="hidden" borderWidth="1px" borderColor={isSelected ? 'blue.400' : 'whiteAlpha.300'} borderTopRadius="lg" bg="rgba(51, 65, 85, 0.4)" style={{ aspectRatio: CHIP.imgAspect }}>
+      <div
+        className={`relative overflow-hidden rounded-t-lg border bg-[rgba(51,65,85,0.4)] ${isSelected ? 'border-blue-400' : 'border-white/12'}`}
+        style={{ aspectRatio: CHIP.imgAspect }}
+      >
         {player.photoUrl ? (
           CHIP.imgFit === 'cover' ? (
-            <Image
+            <img
               src={player.photoUrl}
               alt={player.name}
-              position="absolute"
-              inset={0}
-              w="full"
-              h="full"
-              objectFit="cover"
-              objectPosition={objectPos}
-              transform={`translateY(${CHIP.imgYOffset}%)`}
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{
+                objectPosition: objectPos,
+                transform: `translateY(${CHIP.imgYOffset}%)`,
+              }}
               loading="lazy"
+              onError={(e) => {
+                const img = e.currentTarget;
+                if (img.dataset.photoFallback) return;
+                img.dataset.photoFallback = '1';
+                img.src = fplEndpoints.playerPlaceholder();
+              }}
             />
           ) : (
-            <Flex w="full" h="full" align={wrapperAlign} justify="center">
-              <Image
+            <div className={`flex h-full w-full justify-center ${wrapperAlign}`}>
+              <img
                 src={player.photoUrl}
                 alt={player.name}
-                w="auto"
-                objectFit="contain"
-                objectPosition={objectPos}
-                maxH={`${CHIP.imgScale}%`}
-                transform={`translateY(${CHIP.imgYOffset}%)`}
+                className="max-h-[140%] w-auto object-contain"
+                style={{
+                  objectPosition: objectPos,
+                  transform: `translateY(${CHIP.imgYOffset}%)`,
+                }}
                 loading="lazy"
+                onError={(e) => {
+                  const img = e.currentTarget;
+                  if (img.dataset.photoFallback) return;
+                  img.dataset.photoFallback = '1';
+                  img.src = fplEndpoints.playerPlaceholder();
+                }}
               />
-            </Flex>
+            </div>
           )
         ) : (
-          <Center h="full" w="full" fontSize="10px" fontWeight="bold" color="white" textTransform="uppercase">
+          <div className="flex h-full w-full items-center justify-center text-[10px] font-bold uppercase text-white">
             {player.name.slice(0, 3)}
-          </Center>
+          </div>
         )}
 
-      </Box>
+      </div>
 
       {/* Captain / Vice-Captain badges */}
       {player.isCaptain ? (
-        <Center position="absolute" top="2px" right="2px" boxSize={4} borderRadius="full" bg="yellow.400" fontSize="8px" fontWeight="bold" color="black" zIndex={3}>
+        <div className="absolute top-[2px] right-[2px] z-[3] flex size-4 items-center justify-center rounded-full bg-yellow-400 text-[8px] font-bold text-black">
           C
-        </Center>
+        </div>
       ) : player.isViceCaptain ? (
-        <Center position="absolute" top="2px" right="2px" boxSize={4} borderRadius="full" bg="slate.400" fontSize="8px" fontWeight="bold" color="black" zIndex={3}>
+        <div className="absolute top-[2px] right-[2px] z-[3] flex size-4 items-center justify-center rounded-full bg-slate-400 text-[8px] font-bold text-black">
           V
-        </Center>
+        </div>
       ) : !player.isBench && (onCaptainClick || onViceCaptainClick) ? (
         <div
           onClick={(e) => e.stopPropagation()}
@@ -183,27 +193,27 @@ const PlayerChip = ({
         </div>
       ) : null}
 
-      <Box px={1} py={0.5} bg="rgba(15, 23, 42, 0.8)" borderLeftWidth="1px" borderRightWidth="1px" borderColor="whiteAlpha.300">
-        <Text noOfLines={1} fontSize="10px" fontWeight="medium" color="white" textAlign="center" lineHeight="tight">
+      <div className="border-x border-white/12 bg-[rgba(15,23,42,0.8)] px-1 py-0.5">
+        <p className="line-clamp-1 text-center text-[10px] leading-tight font-medium text-white">
           {player.name}
-        </Text>
-      </Box>
+        </p>
+      </div>
 
-      <Box px={3} py={0.5} borderWidth="1px" borderTopWidth="1px" borderColor={difficultyStyles.borderColor} borderBottomRadius="md" bg={difficultyStyles.bg} color={difficultyStyles.color}>
+      <div className={`rounded-b-md border px-3 py-0.5 ${difficultyStyles.borderColor} ${difficultyStyles.bg} ${difficultyStyles.color}`}>
         {player.chipLabel ? (
-          <Text fontSize="7px" fontWeight="semibold" opacity={0.8} textAlign="center" lineHeight="tight">
+          <p className="text-center text-[7px] leading-tight font-semibold opacity-80">
             {player.chipLabel}
-          </Text>
+          </p>
         ) : null}
-        <Text textAlign="center" fontSize="9px" fontWeight="bold">
+        <p className="text-center text-[9px] font-bold">
           {player.chipLabel != null || player.chipDifficulty != null
             ? `${player.isCaptain ? (player.points * 2).toFixed(1) : player.points.toFixed(1)} xP`
             : player.isCaptain
               ? player.points * 2
               : player.points}
-        </Text>
-      </Box>
-    </Box>
+        </p>
+      </div>
+    </div>
   );
 };
 
@@ -220,7 +230,10 @@ const PitchRow = ({
   onSetCaptain?: (p: Player) => void;
   onSetViceCaptain?: (p: Player) => void;
 }) => (
-  <SimpleGrid columns={Math.max(players.length, 1)} spacingX={{ base: 2, sm: 4 }} spacingY={{ base: 2, sm: 3 }} w="full" placeItems="center">
+  <div
+    className="grid w-full place-items-center gap-x-2 gap-y-2 sm:gap-x-4 sm:gap-y-3"
+    style={{ gridTemplateColumns: `repeat(${Math.max(players.length, 1)}, minmax(0, 1fr))` }}
+  >
     {players.map((p) => (
       <PlayerChip
         key={p.name}
@@ -231,7 +244,7 @@ const PitchRow = ({
         onViceCaptainClick={onSetViceCaptain ? () => onSetViceCaptain(p) : undefined}
       />
     ))}
-  </SimpleGrid>
+  </div>
 );
 
 const BenchRow = ({
@@ -243,7 +256,10 @@ const BenchRow = ({
   onPlayerClick?: (p: Player) => void;
   selectedPlayerId?: number | null;
 }) => (
-  <SimpleGrid columns={Math.max(players.length, 1)} spacingX={{ base: 2, sm: 4 }} spacingY={{ base: 2, sm: 3 }} w="full" placeItems="center">
+  <div
+    className="grid w-full place-items-center gap-x-2 gap-y-2 sm:gap-x-4 sm:gap-y-3"
+    style={{ gridTemplateColumns: `repeat(${Math.max(players.length, 1)}, minmax(0, 1fr))` }}
+  >
     {players.map((p) => (
       <PlayerChip
         key={p.name}
@@ -252,7 +268,7 @@ const BenchRow = ({
         isSelected={selectedPlayerId != null && p.id === selectedPlayerId}
       />
     ))}
-  </SimpleGrid>
+  </div>
 );
 
 const PitchCard = ({ squad, onPlayerClick, selectedPlayerId, swapHint, onSetCaptain, onSetViceCaptain }: Props) => {
@@ -268,67 +284,47 @@ const PitchCard = ({ squad, onPlayerClick, selectedPlayerId, swapHint, onSetCapt
 
   return (
     <DashboardCard>
-      <Flex borderBottomWidth="1px" borderColor="whiteAlpha.100">
+      <div className="flex border-b border-white/6">
         {(['pitch', 'table'] as const).map((t) => (
           <Button
             key={t}
             onClick={() => setTab(t)}
-            flex="1"
-            borderRadius="0"
             variant="ghost"
-            py={3}
-            fontSize="sm"
-            fontWeight="semibold"
-            textTransform="capitalize"
-            color={tab === t ? 'brand.400' : 'slate.400'}
-            borderBottomWidth="2px"
-            borderBottomColor={tab === t ? 'brand.400' : 'transparent'}
-            _hover={{ color: 'white', bg: 'transparent' }}
+            className={`h-auto flex-1 rounded-none border-b-2 py-3 text-sm font-semibold capitalize hover:bg-transparent hover:text-white ${tab === t ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400'}`}
           >
             {t}
           </Button>
         ))}
-      </Flex>
+      </div>
 
       {tab === 'pitch' ? (
-        <Box
-          position="relative"
-          px={{ base: 3, sm: 6, lg: 8 }}
-          py={{ base: 4, sm: 6 }}
+        <div
+          className="relative px-3 py-4 sm:px-6 sm:py-6 lg:px-8"
           style={{ background: 'repeating-linear-gradient(180deg, #1a3d1a 0px, #1a3d1a 60px, #1f4a1f 60px, #1f4a1f 120px)' }}
         >
           <PitchLines />
-          <Stack position="relative" spacing={5} align="center">
+          <div className="relative flex flex-col items-center gap-5">
             {swapHint && selectedPlayerId != null && (
-              <Text
-                textAlign="center"
-                fontSize="xs"
-                fontWeight="medium"
-                color="blue.300"
-                bg="rgba(59, 130, 246, 0.1)"
-                px={3}
-                py={1}
-                borderRadius="md"
-              >
+              <p className="rounded-md bg-[rgba(59,130,246,0.1)] px-3 py-1 text-center text-xs font-medium text-blue-300">
                 {swapHint}
-              </Text>
+              </p>
             )}
             <PitchRow players={gk} onPlayerClick={onPlayerClick} selectedPlayerId={selectedPlayerId} onSetCaptain={onSetCaptain} onSetViceCaptain={onSetViceCaptain} />
             <PitchRow players={def} onPlayerClick={onPlayerClick} selectedPlayerId={selectedPlayerId} onSetCaptain={onSetCaptain} onSetViceCaptain={onSetViceCaptain} />
             <PitchRow players={mid} onPlayerClick={onPlayerClick} selectedPlayerId={selectedPlayerId} onSetCaptain={onSetCaptain} onSetViceCaptain={onSetViceCaptain} />
             <PitchRow players={fwd} onPlayerClick={onPlayerClick} selectedPlayerId={selectedPlayerId} onSetCaptain={onSetCaptain} onSetViceCaptain={onSetViceCaptain} />
-            <Box mt={2} w="full" rounded="xl" bg="rgba(15, 23, 42, 0.8)" px={4} py={3}>
-              <Text mb={2} textAlign="center" fontSize="10px" fontWeight="semibold" textTransform="uppercase" letterSpacing="widest" color="slate.500">
+            <div className="mt-2 w-full rounded-xl bg-[rgba(15,23,42,0.8)] px-4 py-3">
+              <p className="mb-2 text-center text-[10px] font-semibold tracking-widest uppercase text-slate-500">
                 Bench
-              </Text>
+              </p>
               <BenchRow players={bench} onPlayerClick={onPlayerClick} selectedPlayerId={selectedPlayerId} />
-            </Box>
-          </Stack>
-        </Box>
+            </div>
+          </div>
+        </div>
       ) : (
-        <Center py={20} color="slate.500" fontSize="sm">
+        <div className="flex items-center justify-center py-20 text-sm text-slate-500">
           Table view coming soon
-        </Center>
+        </div>
       )}
     </DashboardCard>
   );
@@ -336,20 +332,20 @@ const PitchCard = ({ squad, onPlayerClick, selectedPlayerId, swapHint, onSetCapt
 
 function PitchLines() {
   return (
-    <Box pointerEvents="none" position="absolute" inset={{ base: 3, sm: 4 }}>
-      <Box position="absolute" inset={0} rounded="lg" borderWidth="1px" borderColor="whiteAlpha.300" />
-      <Box position="absolute" left={0} right={0} top="50%" h="1px" bg="whiteAlpha.200" />
-      <Box position="absolute" left="50%" top="50%" h="112px" w="112px" transform="translate(-50%, -50%)" rounded="full" borderWidth="1px" borderColor="whiteAlpha.200" />
-      <Box position="absolute" left="50%" top="50%" h="6px" w="6px" transform="translate(-50%, -50%)" rounded="full" bg="whiteAlpha.300" />
-      <Box position="absolute" left="50%" top="22%" w="24%" h="8%" transform="translateX(-50%)" roundedBottom="full" borderWidth="1px" borderTopWidth="0" borderColor="whiteAlpha.200" />
-      <Box position="absolute" left="50%" bottom="22%" w="24%" h="8%" transform="translateX(-50%)" roundedTop="full" borderWidth="1px" borderBottomWidth="0" borderColor="whiteAlpha.200" />
-      <Box position="absolute" left="50%" top={0} h="22%" w="44%" transform="translateX(-50%)" borderLeftWidth="1px" borderRightWidth="1px" borderBottomWidth="1px" borderColor="whiteAlpha.200" />
-      <Box position="absolute" left="50%" top={0} h="12%" w="24%" transform="translateX(-50%)" borderLeftWidth="1px" borderRightWidth="1px" borderBottomWidth="1px" borderColor="whiteAlpha.200" />
-      <Box position="absolute" left="50%" top="16%" h="6px" w="6px" transform="translate(-50%, -50%)" rounded="full" bg="whiteAlpha.300" />
-      <Box position="absolute" left="50%" bottom={0} h="22%" w="44%" transform="translateX(-50%)" borderLeftWidth="1px" borderRightWidth="1px" borderTopWidth="1px" borderColor="whiteAlpha.200" />
-      <Box position="absolute" left="50%" bottom={0} h="12%" w="24%" transform="translateX(-50%)" borderLeftWidth="1px" borderRightWidth="1px" borderTopWidth="1px" borderColor="whiteAlpha.200" />
-      <Box position="absolute" left="50%" bottom="16%" h="6px" w="6px" transform="translate(-50%)" rounded="full" bg="whiteAlpha.300" />
-    </Box>
+    <div className="pointer-events-none absolute inset-3 sm:inset-4">
+      <div className="absolute inset-0 rounded-lg border border-white/12" />
+      <div className="absolute top-1/2 right-0 left-0 h-px bg-white/8" />
+      <div className="absolute top-1/2 left-1/2 h-[112px] w-[112px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/8" />
+      <div className="absolute top-1/2 left-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/12" />
+      <div className="absolute top-[22%] left-1/2 h-[8%] w-[24%] -translate-x-1/2 rounded-b-full border border-t-0 border-white/8" />
+      <div className="absolute bottom-[22%] left-1/2 h-[8%] w-[24%] -translate-x-1/2 rounded-t-full border border-b-0 border-white/8" />
+      <div className="absolute top-0 left-1/2 h-[22%] w-[44%] -translate-x-1/2 border-x border-b border-white/8" />
+      <div className="absolute top-0 left-1/2 h-[12%] w-[24%] -translate-x-1/2 border-x border-b border-white/8" />
+      <div className="absolute top-[16%] left-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/12" />
+      <div className="absolute bottom-0 left-1/2 h-[22%] w-[44%] -translate-x-1/2 border-x border-t border-white/8" />
+      <div className="absolute bottom-0 left-1/2 h-[12%] w-[24%] -translate-x-1/2 border-x border-t border-white/8" />
+      <div className="absolute bottom-[16%] left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-white/12" />
+    </div>
   );
 }
 

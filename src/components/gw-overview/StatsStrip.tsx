@@ -1,6 +1,5 @@
-import { SimpleGrid, Stat, StatLabel, StatNumber } from '@chakra-ui/react';
 import type { GWStats } from '../../data/gwOverviewMocks';
-import { DashboardCard } from '../ui/dashboard';
+import { DashboardCard } from '@/components/ui/primitives';
 
 interface Props {
   stats: GWStats;
@@ -18,20 +17,20 @@ const StatsStrip = ({ stats }: Props) => {
   ];
 
   return (
-    <SimpleGrid columns={{ base: 2, lg: 5 }} spacing={3}>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
       {items.map((item) => (
-        <DashboardCard key={item.label} px={4} py={3}>
-          <Stat textAlign="center">
-            <StatLabel fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.400">
+        <DashboardCard key={item.label} className="px-4 py-3">
+          <div className="text-center">
+            <p className="text-xs tracking-wide uppercase text-slate-400">
               {item.label}
-            </StatLabel>
-            <StatNumber mt={1} fontSize="lg" color={item.highlight ? 'brand.400' : 'white'}>
+            </p>
+            <p className={`mt-1 text-lg ${item.highlight ? 'text-emerald-400' : 'text-white'}`}>
               {item.value}
-            </StatNumber>
-          </Stat>
+            </p>
+          </div>
         </DashboardCard>
       ))}
-    </SimpleGrid>
+    </div>
   );
 };
 

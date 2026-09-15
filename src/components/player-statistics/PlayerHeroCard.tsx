@@ -1,15 +1,5 @@
 import { useState } from 'react';
 import {
-  Badge,
-  Box,
-  Flex,
-  HStack,
-  Image,
-  SimpleGrid,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
-import {
   elementTypeToPosition,
   type FplBootstrapElement,
 } from '../../api/fpl/fpl';
@@ -21,10 +11,10 @@ import {
   parseStatNumber,
 } from '../../utils/playerStatsFormat';
 import type { PlayerDetailFixture } from '../../hooks/usePlayerDetail';
-import { DashboardCard } from '../ui/dashboard';
+import { DashboardCard } from '@/components/ui/primitives';
 
 /** Matches `PlayerHeadshot` hero size so photo and team crest read as a pair. */
-const HERO_VISUAL_SIZE = '96px';
+const HERO_VISUAL_SIZE = 'size-24';
 
 type PlayerHeroElement = Pick<
   FplBootstrapElement,
@@ -68,34 +58,21 @@ function TeamBadgeSquare({ teamCode, abbr }: { teamCode: number | null | undefin
   const url = teamCode != null ? fplEndpoints.teamBadge(teamCode) : undefined;
 
   return (
-    <Flex
-      boxSize={HERO_VISUAL_SIZE}
-      flexShrink={0}
-      align="center"
-      justify="center"
-      borderRadius="xl"
-      bg="white"
-      p={2}
-      overflow="hidden"
-    >
+    <div className={`${HERO_VISUAL_SIZE} flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white p-2`}>
       {url && !failed ? (
-        <Image
+        <img
           src={url}
           alt={`${abbr} badge`}
-          maxW="full"
-          maxH="full"
-          w="auto"
-          h="auto"
-          objectFit="contain"
+          className="max-h-full max-w-full h-auto w-auto object-contain"
           loading="lazy"
           onError={() => setFailed(true)}
         />
       ) : (
-        <Text fontSize="sm" fontWeight="bold" color="slate.700" textTransform="uppercase">
+        <span className="text-sm font-bold uppercase text-slate-700">
           {abbr.slice(0, 3)}
-        </Text>
+        </span>
       )}
-    </Flex>
+    </div>
   );
 }
 
@@ -127,163 +104,123 @@ const PlayerHeroCard = ({ element, teamBadgeLabel, expectedPoints, fixtures = []
   const insightText = buildInsightText(formValue, fixtures);
 
   return (
-    <Stack spacing={4}>
-      <DashboardCard px={{ base: 4, md: 6 }} py={{ base: 4, md: 5 }} overflow="hidden">
-        <Flex
-          direction={{ base: 'column', lg: 'row' }}
-          gap={{ base: 6, lg: 8 }}
-          align={{ base: 'stretch', lg: 'flex-start' }}
-        >
+    <div className="flex flex-col gap-4">
+      <DashboardCard className="overflow-hidden px-4 py-4 md:px-6 md:py-5">
+        <div className="flex flex-col items-stretch gap-6 lg:flex-row lg:items-start lg:gap-8">
           {/* Left: photo + team crest + identity */}
-          <Stack
-            direction={{ base: 'column', sm: 'row' }}
-            spacing={{ base: 4, sm: 5 }}
-            flex={{ lg: '1.15' }}
-            minW={0}
-            align={{ base: 'stretch', sm: 'flex-start' }}
-          >
-            <Stack spacing={3} align="center" flexShrink={0}>
-              <Box pl={1} pr={0.5} transform="translateX(4px)">
+          <div className="flex min-w-0 flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:gap-5 lg:flex-[1.15]">
+            <div className="flex shrink-0 flex-col items-center gap-3">
+              <div className="translate-x-1 pl-1 pr-0.5">
                 <PlayerHeadshot code={element.code} name={element.web_name} size="hero" />
-              </Box>
+              </div>
               <TeamBadgeSquare teamCode={element.teamCode} abbr={teamBadgeLabel ?? element.teamShortName} />
-            </Stack>
+            </div>
 
-            <Stack spacing={3} flex="1" minW={0}>
-              <Stack spacing={1.5}>
-                <Text fontSize={{ base: '2xl', md: '3xl' }} fontWeight="bold" color="white" noOfLines={1}>
+            <div className="flex min-w-0 flex-1 flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <span className="truncate text-2xl font-bold text-white md:text-3xl">
                   {element.web_name}
-                </Text>
+                </span>
 
-                <HStack spacing={2} flexWrap="wrap">
-                  <Badge px={2.5} py={1} borderRadius="md" bg="whiteAlpha.200" color="slate.100" textTransform="none">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-md bg-white/8 px-2.5 py-1 text-xs font-medium text-slate-100 normal-case">
                     {teamBadgeLabel ?? element.teamShortName}
-                  </Badge>
-                  <Badge px={2.5} py={1} borderRadius="md" bg="whiteAlpha.100" color="slate.200" textTransform="none">
+                  </span>
+                  <span className="rounded-md bg-white/6 px-2.5 py-1 text-xs font-medium text-slate-200 normal-case">
                     {element.teamName}
-                  </Badge>
-                  <Badge px={2.5} py={1} borderRadius="md" bg="brand.500" color="slate.950" textTransform="none">
+                  </span>
+                  <span className="rounded-md bg-emerald-500 px-2.5 py-1 text-xs font-medium text-slate-950 normal-case">
                     {position}
-                  </Badge>
-                </HStack>
-              </Stack>
+                  </span>
+                </div>
+              </div>
 
-              <HStack spacing={5} flexWrap="wrap">
+              <div className="flex flex-wrap items-center gap-5">
                 <MetricText label="Price" value={formatPriceFromNowCost(element.now_cost)} />
                 <MetricText label="Ownership" value={formatOwnershipPercent(element.selected_by_percent)} />
                 <MetricText label="Total points" value={String(element.total_points ?? 0)} />
-              </HStack>
+              </div>
 
-              <HStack spacing={2} flexWrap="wrap">
-                <Badge
-                  px={2.5}
-                  py={1}
-                  borderRadius="md"
-                  textTransform="none"
-                  borderWidth="1px"
-                  bg={availability.bg}
-                  color={availability.color}
-                  borderColor={availability.borderColor}
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-md border px-2.5 py-1 text-xs font-medium normal-case ${availability.bg} ${availability.color} ${availability.borderColor}`}
                 >
                   {availability.label}
-                </Badge>
+                </span>
                 {availability.chanceText ? (
-                  <Text fontSize="sm" color="slate.300">
+                  <span className="text-sm text-slate-300">
                     {availability.chanceText}
-                  </Text>
+                  </span>
                 ) : null}
-              </HStack>
+              </div>
 
               {ruleTags.length > 0 ? (
-                <Stack spacing={2} pt={1}>
+                <div className="flex flex-col gap-2 pt-1">
                   {ruleTags.map((tag) => (
-                    <HStack key={tag.label} spacing={3} flexWrap="wrap">
-                      <Badge
-                        px={2.5}
-                        py={1}
-                        borderRadius="md"
-                        textTransform="none"
-                        borderWidth="1px"
-                        bg={tag.bg}
-                        color={tag.color}
-                        borderColor={tag.borderColor}
-                        flexShrink={0}
+                    <div key={tag.label} className="flex flex-wrap items-center gap-3">
+                      <span
+                        className={`shrink-0 rounded-md border px-2.5 py-1 text-xs font-medium normal-case ${tag.bg} ${tag.color} ${tag.borderColor}`}
                       >
                         {tag.label}
-                      </Badge>
-                      <Text fontSize="sm" color="slate.400" lineHeight="short">
+                      </span>
+                      <span className="text-sm leading-[1.45] text-slate-400">
                         {tag.helperText}
-                      </Text>
-                    </HStack>
+                      </span>
+                    </div>
                   ))}
-                </Stack>
+                </div>
               ) : null}
-            </Stack>
-          </Stack>
+            </div>
+          </div>
 
           {/* Right: narrative insight + position stat tiles */}
-          <Stack
-            spacing={4}
-            flex={{ lg: '1' }}
-            minW={0}
-            pt={{ base: 4, lg: 0 }}
-            borderTopWidth={{ base: '1px', lg: '0' }}
-            borderLeftWidth={{ base: '0', lg: '1px' }}
-            borderColor="whiteAlpha.100"
-            pl={{ base: 0, lg: 2 }}
-          >
-            <Stack spacing={2}>
-              <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="slate.500" fontWeight="semibold">
+          <div className="flex min-w-0 flex-col gap-4 border-t border-white/6 pt-4 lg:flex-1 lg:border-l lg:border-t-0 lg:pl-2 lg:pt-0">
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Insight
-              </Text>
-              <Text fontSize="sm" color="slate.200" lineHeight="tall">
+              </span>
+              <p className="text-sm leading-[1.6] text-slate-200">
                 {insightText}
-              </Text>
-            </Stack>
+              </p>
+            </div>
 
-            <Stack spacing={2}>
-              <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="slate.500" fontWeight="semibold">
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 {position} insights
-              </Text>
-              <SimpleGrid columns={{ base: 2, md: 2 }} spacing={3}>
+              </span>
+              <div className="grid grid-cols-2 gap-3">
                 {positionStats.map((stat) => (
-                  <Stack
+                  <div
                     key={stat.label}
-                    spacing={0.5}
-                    px={3}
-                    py={2.5}
-                    borderRadius="lg"
-                    borderWidth="1px"
-                    borderColor="whiteAlpha.100"
-                    bg="rgba(15, 23, 42, 0.65)"
+                    className="flex flex-col gap-0.5 rounded-lg border border-white/6 bg-[rgba(15,23,42,0.65)] px-3 py-2.5"
                   >
-                    <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="slate.500">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">
                       {stat.label}
-                    </Text>
-                    <Text fontSize="lg" fontWeight="bold" color="white">
+                    </span>
+                    <span className="text-lg font-bold text-white">
                       {stat.value}
-                    </Text>
-                  </Stack>
+                    </span>
+                  </div>
                 ))}
-              </SimpleGrid>
-            </Stack>
-          </Stack>
-        </Flex>
+              </div>
+            </div>
+          </div>
+        </div>
       </DashboardCard>
 
-      <SimpleGrid columns={{ base: 2, md: 3, xl: 7 }} spacing={3}>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
         {overviewStats.map((stat) => (
-          <DashboardCard key={stat.label} px={4} py={3}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="slate.500">
+          <DashboardCard key={stat.label} className="px-4 py-3">
+            <span className="text-xs uppercase tracking-wide text-slate-500">
               {stat.label}
-            </Text>
-            <Text mt={1} fontSize="xl" fontWeight="bold" color="white">
+            </span>
+            <p className="mt-1 text-xl font-bold text-white">
               {stat.value}
-            </Text>
+            </p>
           </DashboardCard>
         ))}
-      </SimpleGrid>
-    </Stack>
+      </div>
+    </div>
   );
 };
 
@@ -291,14 +228,14 @@ type MetricTextProps = { label: string; value: string };
 
 function MetricText({ label, value }: MetricTextProps) {
   return (
-    <Box>
-      <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="slate.500">
+    <div>
+      <span className="block text-xs uppercase tracking-wide text-slate-500">
         {label}
-      </Text>
-      <Text fontSize="md" fontWeight="semibold" color="white">
+      </span>
+      <span className="text-base font-semibold text-white">
         {value}
-      </Text>
-    </Box>
+      </span>
+    </div>
   );
 }
 
@@ -321,9 +258,9 @@ function resolveAvailability(element: PlayerHeroElement): AvailabilityState {
     return {
       label: 'Available',
       chanceText: chance != null ? `${chance}% chance this GW` : null,
-      bg: 'rgba(16, 185, 129, 0.12)',
-      color: 'green.300',
-      borderColor: 'rgba(16, 185, 129, 0.22)',
+      bg: 'bg-[rgba(16,185,129,0.12)]',
+      color: 'text-green-300',
+      borderColor: 'border-[rgba(16,185,129,0.22)]',
     };
   }
 
@@ -331,9 +268,9 @@ function resolveAvailability(element: PlayerHeroElement): AvailabilityState {
     return {
       label: 'Suspended',
       chanceText: chance != null ? `${chance}% chance next GW` : null,
-      bg: 'rgba(251, 146, 60, 0.12)',
-      color: 'orange.300',
-      borderColor: 'rgba(251, 146, 60, 0.22)',
+      bg: 'bg-[rgba(251,146,60,0.12)]',
+      color: 'text-orange-300',
+      borderColor: 'border-[rgba(251,146,60,0.22)]',
     };
   }
 
@@ -341,9 +278,9 @@ function resolveAvailability(element: PlayerHeroElement): AvailabilityState {
     return {
       label: 'Doubtful',
       chanceText: chance != null ? `${chance}% chance this GW` : null,
-      bg: 'rgba(250, 204, 21, 0.12)',
-      color: 'yellow.300',
-      borderColor: 'rgba(250, 204, 21, 0.22)',
+      bg: 'bg-[rgba(250,204,21,0.12)]',
+      color: 'text-yellow-300',
+      borderColor: 'border-[rgba(250,204,21,0.22)]',
     };
   }
 
@@ -351,18 +288,18 @@ function resolveAvailability(element: PlayerHeroElement): AvailabilityState {
     return {
       label: 'Unavailable',
       chanceText: chance != null ? `${chance}% chance this GW` : null,
-      bg: 'rgba(248, 113, 113, 0.12)',
-      color: 'red.300',
-      borderColor: 'rgba(248, 113, 113, 0.22)',
+      bg: 'bg-[rgba(248,113,113,0.12)]',
+      color: 'text-red-300',
+      borderColor: 'border-[rgba(248,113,113,0.22)]',
     };
   }
 
   return {
     label: 'Status unknown',
     chanceText: chance != null ? `${chance}% chance this GW` : null,
-    bg: 'rgba(148, 163, 184, 0.15)',
-    color: 'slate.200',
-    borderColor: 'rgba(148, 163, 184, 0.2)',
+    bg: 'bg-[rgba(148,163,184,0.15)]',
+    color: 'text-slate-200',
+    borderColor: 'border-[rgba(148,163,184,0.2)]',
   };
 }
 
@@ -381,9 +318,9 @@ function getRuleTags(ownership: number, formValue: number): RuleTag[] {
     tags.push({
       label: 'Template',
       helperText: 'High ownership across active managers.',
-      bg: 'rgba(56, 189, 248, 0.12)',
-      color: 'cyan.300',
-      borderColor: 'rgba(56, 189, 248, 0.24)',
+      bg: 'bg-[rgba(56,189,248,0.12)]',
+      color: 'text-cyan-300',
+      borderColor: 'border-[rgba(56,189,248,0.24)]',
     });
   }
 
@@ -391,9 +328,9 @@ function getRuleTags(ownership: number, formValue: number): RuleTag[] {
     tags.push({
       label: 'Differential',
       helperText: 'Low ownership provides an edge to climb ranks.',
-      bg: 'rgba(20, 184, 166, 0.12)',
-      color: 'teal.300',
-      borderColor: 'rgba(20, 184, 166, 0.24)',
+      bg: 'bg-[rgba(20,184,166,0.12)]',
+      color: 'text-teal-300',
+      borderColor: 'border-[rgba(20,184,166,0.24)]',
     });
   }
 
@@ -401,9 +338,9 @@ function getRuleTags(ownership: number, formValue: number): RuleTag[] {
     tags.push({
       label: 'Hot form',
       helperText: 'Averaging high points in recent matches.',
-      bg: 'rgba(251, 146, 60, 0.12)',
-      color: 'orange.300',
-      borderColor: 'rgba(251, 146, 60, 0.24)',
+      bg: 'bg-[rgba(251,146,60,0.12)]',
+      color: 'text-orange-300',
+      borderColor: 'border-[rgba(251,146,60,0.24)]',
     });
   }
 

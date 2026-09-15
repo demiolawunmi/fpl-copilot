@@ -1,7 +1,6 @@
-import { SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { elementTypeToPosition, type FplBootstrapElement } from '../../api/fpl/fpl';
 import { parseStatNumber } from '../../utils/playerStatsFormat';
-import { DashboardCard, DashboardHeader } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 type PositionInsightsElement = Pick<
   FplBootstrapElement,
@@ -36,27 +35,21 @@ const PlayerPositionInsights = ({ element }: PlayerPositionInsightsProps) => {
         title="Position Insights"
         description={`${position}-focused season indicators from official FPL stats.`}
       />
-      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3} px={5} py={4}>
+      <div className="grid grid-cols-1 gap-3 px-5 py-4 md:grid-cols-2">
         {insightStats.map((stat) => (
-          <Stack
+          <div
             key={stat.label}
-            spacing={1}
-            px={3.5}
-            py={3}
-            borderRadius="lg"
-            borderWidth="1px"
-            borderColor="whiteAlpha.100"
-            bg="rgba(15, 23, 42, 0.65)"
+            className="flex flex-col gap-1 rounded-lg border border-white/6 bg-[rgba(15,23,42,0.65)] px-3.5 py-3"
           >
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="slate.500">
+            <span className="text-xs uppercase tracking-wide text-slate-500">
               {stat.label}
-            </Text>
-            <Text fontSize="lg" fontWeight="bold" color="white">
+            </span>
+            <span className="text-lg font-bold text-white">
               {stat.value}
-            </Text>
-          </Stack>
+            </span>
+          </div>
         ))}
-      </SimpleGrid>
+      </div>
     </DashboardCard>
   );
 };

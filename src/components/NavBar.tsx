@@ -1,14 +1,7 @@
-import {
-  Badge,
-  Box,
-  Button,
-  Container,
-  Flex,
-  HStack,
-  Text,
-} from '@chakra-ui/react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTeamId } from '../context/TeamIdContext';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 interface NavbarProps {
   teamName?: string | null;
@@ -33,22 +26,18 @@ const Navbar = ({ teamName }: NavbarProps) => {
   };
 
   return (
-    <Box as="nav" bg="rgba(15, 23, 42, 0.92)" borderBottomWidth="1px" borderColor="whiteAlpha.200" boxShadow="lg">
-      <Container maxW="8xl" px={{ base: 4, md: 6, xl: 10 }} py={4}>
-        <Flex align="center" justify="space-between" gap={6} wrap="wrap">
-          <Flex align="center" gap={{ base: 4, md: 8 }} wrap="wrap">
-            <Text
-              as={Link}
+    <nav className="border-b border-white/8 bg-[rgba(15,23,42,0.92)] shadow-lg">
+      <div className="mx-auto w-full max-w-[90rem] px-4 py-4 md:px-6 xl:px-10">
+        <div className="flex flex-wrap items-center justify-between gap-6">
+          <div className="flex flex-wrap items-center gap-4 md:gap-8">
+            <Link
               to="/"
-              fontSize="xl"
-              fontWeight="bold"
-              letterSpacing="wide"
-              color="brand.400"
+              className="text-xl font-bold tracking-wide text-emerald-400"
             >
               FPL Copilot
-            </Text>
+            </Link>
 
-            <HStack spacing={2} wrap="wrap">
+            <div className="flex flex-wrap items-center gap-2">
               {navLinks.map(({ to, label }) => {
                 const isPlayersLink = to === '/players';
                 const isActive = isPlayersLink
@@ -57,53 +46,36 @@ const Navbar = ({ teamName }: NavbarProps) => {
                 return (
                   <Button
                     key={to}
-                    as={Link}
-                    to={to}
+                    asChild
                     size="sm"
                     variant="ghost"
-                    color={isActive ? 'white' : 'slate.300'}
-                    bg={isActive ? 'whiteAlpha.200' : 'transparent'}
-                    _hover={{ bg: 'whiteAlpha.100', color: 'white' }}
+                    className={`hover:bg-white/6 hover:text-white ${isActive ? 'bg-white/8 text-white' : 'text-slate-300'}`}
                   >
-                    {label}
+                    <Link to={to}>{label}</Link>
                   </Button>
                 );
               })}
-            </HStack>
-          </Flex>
+            </div>
+          </div>
 
-          <HStack spacing={4} wrap="wrap" justify={{ base: 'flex-start', md: 'flex-end' }}>
+          <div className="flex flex-wrap items-center justify-start gap-4 md:justify-end">
             {teamId ? (
-              <Badge
-                borderRadius="full"
-                px={3}
-                py={1.5}
-                fontSize="xs"
-                fontFamily="mono"
-                colorScheme="green"
-                variant="subtle"
-                textTransform="none"
-                bg="rgba(16, 185, 129, 0.12)"
-                color="brand.300"
-                borderWidth="1px"
-                borderColor="rgba(16, 185, 129, 0.22)"
-              >
+              <Badge className="rounded-full border border-[rgba(16,185,129,0.22)] bg-[rgba(16,185,129,0.12)] px-3 py-1.5 font-mono text-xs normal-case text-emerald-300">
                 ID: {teamId} {teamName ? `| ${teamName}` : ''}
               </Badge>
             ) : null}
             <Button
               size="sm"
               variant="ghost"
-              color="red.300"
-              _hover={{ bg: 'rgba(248, 113, 113, 0.12)', color: 'red.200' }}
+              className="text-red-300 hover:bg-[rgba(248,113,113,0.12)] hover:text-red-200"
               onClick={handleSignOut}
             >
               Sign Out
             </Button>
-          </HStack>
-        </Flex>
-      </Container>
-    </Box>
+          </div>
+        </div>
+      </div>
+    </nav>
   );
 };
 

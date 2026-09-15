@@ -1,14 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
-import {
-  Alert,
-  AlertDescription,
-  Box,
-  Grid,
-  GridItem,
-  Spinner,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import GWHeader from '../components/gw-overview/GWHeader';
 import StatsStrip from '../components/gw-overview/StatsStrip';
 import PitchCard from '../components/gw-overview/PitchCard';
@@ -29,7 +21,7 @@ import {
 } from '../data/gwOverviewMocks';
 import { useTeamId } from '../context/TeamIdContext';
 import { useFplData } from '../hooks/useFplData';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const GWOverviewPage = () => {
   const { teamId } = useTeamId();
@@ -106,19 +98,19 @@ const GWOverviewPage = () => {
   }, [gwInfo.gameweek, stats?.gwPoints, squad.length]);
 
   return (
-    <Stack flex="1" spacing={6} px={{ base: 4, md: 6, xl: 10 }} py={{ base: 6, xl: 8 }}>
+    <div className="flex flex-1 flex-col gap-6 px-4 py-6 md:px-6 xl:px-10 xl:py-8">
       {fpl.loading ? (
-        <Stack align="center" justify="center" py={12} spacing={3}>
-          <Spinner size="lg" color="brand.400" thickness="3px" />
-          <Text fontSize="sm" color="slate.400">
+        <div className="flex flex-col items-center justify-center gap-3 py-12">
+          <Loader2 size={32} className="animate-spin text-emerald-400" />
+          <p className="text-sm text-slate-400">
             Loading your FPL data…
-          </Text>
-        </Stack>
+          </p>
+        </div>
       ) : null}
 
       {fpl.error && !fpl.loading ? (
-        <Alert status="warning" borderRadius="xl" bg="rgba(234, 179, 8, 0.08)" borderWidth="1px" borderColor="rgba(234, 179, 8, 0.2)">
-          <AlertDescription color="yellow.300" fontSize="sm">
+        <Alert className="rounded-2xl border border-[rgba(234,179,8,0.2)] bg-[rgba(234,179,8,0.08)]">
+          <AlertDescription className="text-sm text-yellow-300">
             ⚠ Couldn't load live data — showing mock data. ({fpl.error})
           </AlertDescription>
         </Alert>
@@ -132,11 +124,11 @@ const GWOverviewPage = () => {
         disableNext={disableNext}
       />
 
-      <Grid templateColumns={{ base: '1fr', xl: 'repeat(3, minmax(0, 1fr))' }} gap={6}>
-        <GridItem colSpan={{ base: 1, xl: 2 }}>
-          <Stack spacing={6}>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="col-span-1 xl:col-span-2">
+          <div className="flex flex-col gap-6">
             <StatsStrip stats={stats} />
-            <Box ref={pitchRef}>
+            <div ref={pitchRef}>
               <PitchCard
                 squad={squad}
                 onPlayerClick={(player) => {
@@ -146,35 +138,35 @@ const GWOverviewPage = () => {
                   navigate(`/players/${id}`, { state: { from: location.pathname } });
                 }}
               />
-            </Box>
-            <Box ref={aiSummaryRef}>
+            </div>
+            <div ref={aiSummaryRef}>
               <AISummaryCard gwInfo={gwInfo} summary={mockAISummary} />
-            </Box>
-          </Stack>
-        </GridItem>
+            </div>
+          </div>
+        </div>
 
-        <GridItem colSpan={1}>
-          <Stack spacing={6}>
-            <Box ref={fixturesTopRef}>
+        <div className="col-span-1">
+          <div className="flex flex-col gap-6">
+            <div ref={fixturesTopRef}>
               <FixturesCard
                 fixtures={fixtures}
                 heightPx={fixturesHeight}
                 isCurrentGw={currentSelected === fpl.currentGW}
               />
-            </Box>
+            </div>
             <RecommendedTransfersCard
               transfers={mockRecommendedTransfers}
               heightPx={recommendedHeight}
             />
-          </Stack>
-        </GridItem>
-      </Grid>
+          </div>
+        </div>
+      </div>
 
-      <Grid templateColumns={{ base: '1fr', xl: 'repeat(2, minmax(0, 1fr))' }} gap={6}>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <InjuriesTable injuries={mockInjuries} />
         <TransfersTable transfers={mockTransfers} />
-      </Grid>
-    </Stack>
+      </div>
+    </div>
   );
 };
 

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Badge, Box, Button, HStack, Stack, Text } from '@chakra-ui/react';
 import type { RecommendedTransferItem } from '../../data/commandCenterMocks';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   transfers: RecommendedTransferItem[];
@@ -18,56 +19,57 @@ const RecommendedTransfersList = ({ transfers, onApplyTransfer }: Props) => {
   return (
     <DashboardCard>
       <DashboardHeader title="Recommended Transfers" description="AI-suggested moves for this gameweek" />
-      <Stack px={5} py={4} spacing={3} maxH="24rem" overflowY="auto" sx={cardScrollSx}>
+      <div className="card-scroll flex max-h-[24rem] flex-col gap-3 overflow-y-auto px-5 py-4">
         {transfers.length === 0 ? (
-          <Box py={2}>
-            <Text fontSize="sm" color="slate.400">
+          <div className="py-2">
+            <span className="text-sm text-slate-400">
               No transfer recommendations available yet. Try applying a model blend to generate suggestions.
-            </Text>
-          </Box>
+            </span>
+          </div>
         ) : null}
         {transfers.map((transfer, idx) => (
-          <Box key={idx} pb={3} borderBottomWidth={idx === transfers.length - 1 ? '0' : '1px'} borderColor="whiteAlpha.100">
-            <HStack align="center" justify="space-between" gap={3}>
-              <HStack spacing={3} minW={0} flex="1" align="center">
-                <HStack spacing={2} minW={0}>
-                  <Text fontSize="sm" fontWeight="semibold" color="red.300">{transfer.playerOut.name}</Text>
-                  <Text color="slate.600">→</Text>
-                  <Text fontSize="sm" fontWeight="semibold" color="brand.400">{transfer.playerIn.name}</Text>
-                </HStack>
-                <Badge px={2} py={1} fontSize="10px" textTransform="none" borderRadius="md" bg="rgba(16, 185, 129, 0.12)" color="brand.400" borderWidth="1px" borderColor="rgba(16, 185, 129, 0.22)">
+          <div key={idx} className={`pb-3 ${idx === transfers.length - 1 ? '' : 'border-b border-white/6'}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="text-sm font-semibold text-red-300">{transfer.playerOut.name}</span>
+                  <span className="text-slate-600">→</span>
+                  <span className="text-sm font-semibold text-emerald-400">{transfer.playerIn.name}</span>
+                </div>
+                <Badge className="rounded-md border border-[rgba(16,185,129,0.22)] bg-[rgba(16,185,129,0.12)] px-2 py-1 text-[10px] normal-case text-emerald-400">
                   +{transfer.xPtsDelta.toFixed(1)} xPts
                 </Badge>
-              </HStack>
+              </div>
               <Button
                 onClick={() => onApplyTransfer(transfer.playerIn.id, transfer.playerOut.id)}
-                size="xs"
                 variant="outline"
-                borderColor="rgba(16, 185, 129, 0.22)"
-                color="brand.400"
-                _hover={{ bg: 'rgba(16, 185, 129, 0.12)' }}
+                className="h-6 rounded-md border-[rgba(16,185,129,0.22)] px-2 text-xs text-emerald-400 hover:bg-[rgba(16,185,129,0.12)]"
               >
                 Apply
               </Button>
-            </HStack>
+            </div>
 
-            <HStack mt={2} spacing={4} fontSize="xs" color="slate.400" wrap="wrap">
-              <Text>OUT: £{transfer.playerOut.price}m • {transfer.playerOut.team}</Text>
-              <Text>IN: £{transfer.playerIn.price}m • {transfer.playerIn.team}</Text>
-            </HStack>
+            <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-400">
+              <span>OUT: £{transfer.playerOut.price}m • {transfer.playerOut.team}</span>
+              <span>IN: £{transfer.playerIn.price}m • {transfer.playerIn.team}</span>
+            </div>
 
-            <Button mt={2} onClick={() => toggleExpand(idx)} variant="link" size="xs" color="brand.400" _hover={{ color: 'brand.300' }}>
+            <Button
+              onClick={() => toggleExpand(idx)}
+              variant="link"
+              className="mt-2 h-6 px-0 text-xs text-emerald-400 hover:text-emerald-300"
+            >
               {expandedIndex === idx ? '▼ Hide rationale' : '▶ Why this?'}
             </Button>
 
             {expandedIndex === idx ? (
-              <Box mt={2} pl={4} borderLeftWidth="2px" borderColor="whiteAlpha.200">
-                <Text fontSize="xs" color="slate.300" lineHeight="tall">{transfer.why}</Text>
-              </Box>
+              <div className="mt-2 border-l-2 border-white/8 pl-4">
+                <span className="text-xs leading-relaxed text-slate-300">{transfer.why}</span>
+              </div>
             ) : null}
-          </Box>
+          </div>
         ))}
-      </Stack>
+      </div>
     </DashboardCard>
   );
 };

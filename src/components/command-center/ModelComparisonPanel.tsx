@@ -1,6 +1,9 @@
-import { Badge, Box, Button, Slider, SliderFilledTrack, SliderThumb, SliderTrack, Stack, Text } from '@chakra-ui/react';
+import { Loader2 } from 'lucide-react';
 import type { ModelSource } from '../../data/commandCenterMocks';
-import { DashboardCard, DashboardHeader } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
 
 type ApplyStatus = 'idle' | 'submitting' | 'queued' | 'running' | 'completed' | 'failed';
 
@@ -17,11 +20,11 @@ interface Props {
 }
 
 const getStatusTone = (applyStatus: ApplyStatus) => {
-  if (applyStatus === 'completed') return { bg: 'green.900', color: 'green.200', label: 'Completed' };
-  if (applyStatus === 'failed') return { bg: 'red.900', color: 'red.200', label: 'Failed' };
-  if (applyStatus === 'running') return { bg: 'blue.900', color: 'blue.200', label: 'Running' };
-  if (applyStatus === 'queued' || applyStatus === 'submitting') return { bg: 'orange.900', color: 'orange.200', label: 'Pending' };
-  return { bg: 'whiteAlpha.100', color: 'slate.300', label: 'Idle' };
+  if (applyStatus === 'completed') return { classes: 'bg-green-900 text-green-200', label: 'Completed' };
+  if (applyStatus === 'failed') return { classes: 'bg-red-900 text-red-200', label: 'Failed' };
+  if (applyStatus === 'running') return { classes: 'bg-blue-900 text-blue-200', label: 'Running' };
+  if (applyStatus === 'queued' || applyStatus === 'submitting') return { classes: 'bg-orange-900 text-orange-200', label: 'Pending' };
+  return { classes: 'bg-white/6 text-slate-300', label: 'Idle' };
 };
 
 const ModelComparisonPanel = ({
@@ -47,87 +50,77 @@ const ModelComparisonPanel = ({
         action={(
           <Button
             size="sm"
-            colorScheme={applyStatus === 'failed' ? 'red' : 'blue'}
             onClick={onApply}
-            isDisabled={isBlendInvalid}
-            _disabled={{
-              opacity: 0.45,
-              cursor: 'not-allowed',
-            }}
-            isLoading={isBusy}
-            loadingText={applyStatus === 'submitting' ? 'Submitting' : 'Applying'}
+            disabled={isBlendInvalid || isBusy}
+            className={`${applyStatus === 'failed' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} disabled:cursor-not-allowed disabled:opacity-45`}
           >
-            {buttonLabel}
+            {isBusy && <Loader2 size={16} className="animate-spin" />}
+            {isBusy ? (applyStatus === 'submitting' ? 'Submitting' : 'Applying') : buttonLabel}
           </Button>
         )}
       />
-      <Box px={5} py={4}>
-        <Stack spacing={3}>
+      <div className="px-5 py-4">
+        <div className="flex flex-col gap-3">
           {models.map((model) => (
-            <Box key={model.id} borderWidth="1px" borderColor="whiteAlpha.200" borderRadius="lg" bg="whiteAlpha.50" px={3} py={2}>
-              <Stack spacing={2}>
-                <Box display="flex" alignItems="center" justifyContent="space-between" gap={3}>
-                  <Text fontSize="sm" color="slate.200">{model.name}</Text>
-                  <Badge px={2} py={1} textTransform="none" borderRadius="md" bg="whiteAlpha.100" color="brand.400" borderWidth="1px" borderColor="whiteAlpha.200">
+            <div key={model.id} className="rounded-lg border border-white/8 bg-white/4 px-3 py-2">
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-slate-200">{model.name}</span>
+                  <Badge className="rounded-md border border-white/8 bg-white/6 px-2 py-1 normal-case text-emerald-400">
                     {model.weight}%
                   </Badge>
-                </Box>
+                </div>
                 <Slider
-                  value={model.weight}
+                  value={[model.weight]}
                   min={0}
                   max={100}
                   step={1}
-                  onChange={(nextValue) => onModelWeightChange(model.id, nextValue)}
-                >
-                  <SliderTrack bg="whiteAlpha.100">
-                    <SliderFilledTrack bg="brand.400" />
-                  </SliderTrack>
-                  <SliderThumb />
-                </Slider>
-              </Stack>
-            </Box>
+                  onValueChange={(nextValue) => onModelWeightChange(model.id, nextValue[0])}
+                />
+              </div>
+            </div>
           ))}
 
-          <Box borderWidth="1px" borderColor={isBlendInvalid ? 'red.300' : 'whiteAlpha.200'} borderRadius="lg" bg={isBlendInvalid ? 'red.900' : 'whiteAlpha.50'} px={3} py={2}>
-            <Stack spacing={1}>
-              <Text fontSize="xs" color={isBlendInvalid ? 'red.200' : 'slate.400'}>
+          <div className={`rounded-lg border px-3 py-2 ${isBlendInvalid ? 'border-red-300 bg-red-900' : 'border-white/8 bg-white/4'}`}>
+            <div className="flex flex-col gap-1">
+              <p className={`text-xs ${isBlendInvalid ? 'text-red-200' : 'text-slate-400'}`}>
                 Blend Total: {blendTotal}%
-              </Text>
-              <Text fontSize="xs" color={isBlendInvalid ? 'red.200' : 'slate.400'}>
+              </p>
+              <p className={`text-xs ${isBlendInvalid ? 'text-red-200' : 'text-slate-400'}`}>
                 Remaining: {Math.max(0, blendRemaining)}%
-              </Text>
+              </p>
               {isBlendInvalid ? (
-                <Box borderWidth="1px" borderColor="red.300" borderRadius="md" bg="rgba(127, 29, 29, 0.65)" px={2} py={1.5}>
-                  <Text fontSize="sm" color="red.100" fontWeight="semibold">
+                <div className="rounded-md border border-red-300 bg-[rgba(127,29,29,0.65)] px-2 py-1.5">
+                  <p className="text-sm font-semibold text-red-100">
                     Total ratio cannot exceed 100%.
-                  </Text>
-                  <Text fontSize="xs" color="red.200">
+                  </p>
+                  <p className="text-xs text-red-200">
                     Apply Blend is disabled until one or more source weights are reduced.
-                  </Text>
-                </Box>
+                  </p>
+                </div>
               ) : null}
-            </Stack>
-          </Box>
+            </div>
+          </div>
 
-          <Box borderWidth="1px" borderColor="whiteAlpha.200" borderRadius="lg" bg="whiteAlpha.50" px={3} py={2}>
-            <Stack spacing={1}>
-              <Box display="flex" alignItems="center" justifyContent="space-between" gap={2}>
-                <Text fontSize="xs" color="slate.400">Apply Status</Text>
-                <Badge px={2} py={0.5} textTransform="none" borderRadius="md" bg={tone.bg} color={tone.color} borderWidth="1px" borderColor="whiteAlpha.200">
+          <div className="rounded-lg border border-white/8 bg-white/4 px-3 py-2">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-400">Apply Status</span>
+                <Badge className={`rounded-md border border-white/8 px-2 py-0.5 normal-case ${tone.classes}`}>
                   {tone.label}
                 </Badge>
-              </Box>
-              <Box fontSize="sm">
+              </div>
+              <div className="text-sm">
                 {statusMessage ?? (
-                  <Text color="slate.200">
+                  <p className="text-slate-200">
                     Apply to submit blend job and refresh model output.
-                  </Text>
+                  </p>
                 )}
-              </Box>
-            </Stack>
-          </Box>
-        </Stack>
-      </Box>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </DashboardCard>
   );
 };

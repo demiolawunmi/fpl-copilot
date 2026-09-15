@@ -1,4 +1,3 @@
-import { Badge, Box, HStack, Stack, Text } from '@chakra-ui/react';
 import type { FplBootstrapElement } from '../../api/fpl/fpl';
 import {
   getTopPlayersByMetric,
@@ -6,7 +5,7 @@ import {
   type PlayerLeaderboardRow,
   type TeamAbbreviationMap,
 } from '../../utils/playerStatsFormat';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 import PlayerHeadshot from './PlayerHeadshot';
 
 export type LeaderboardCardKey = 'goals' | 'assists' | 'xg' | 'xgi' | 'cleanSheets';
@@ -128,78 +127,69 @@ export function buildPlayerLeaderboardCardsData(input: {
 
 const PlayerLeaderboardCards = ({ cards }: PlayerLeaderboardCardsProps) => {
   return (
-    <Box overflowX="auto" pb={2} sx={cardScrollSx}>
-      <HStack spacing={4} align="stretch" minW="max-content">
+    <div className="card-scroll overflow-x-auto pb-2">
+      <div className="flex min-w-max items-stretch gap-4">
         {cards.map((card) => (
-          <DashboardCard key={card.key} w={{ base: '260px', md: '280px' }} flexShrink={0}>
+          <DashboardCard key={card.key} className="w-[260px] shrink-0 md:w-[280px]">
             <DashboardHeader title={card.title} description={card.metricLabel} />
-            <Stack px={5} py={4} spacing={2.5}>
+            <div className="flex flex-col gap-2.5 px-5 py-4">
               {card.leaders.map((leader, index) => {
                 const rank = index + 1;
                 const isTopRank = rank === 1;
 
                 return (
-                  <HStack
+                  <div
                     key={`${card.key}-${leader.id}-${rank}`}
-                    justify="space-between"
-                    gap={3}
-                    px={3}
-                    py={2.5}
-                    borderRadius="lg"
-                    borderWidth="1px"
-                    borderColor={isTopRank ? 'brand.400' : 'whiteAlpha.200'}
-                    bg={isTopRank ? 'rgba(56, 189, 248, 0.09)' : 'rgba(30, 41, 59, 0.36)'}
+                    className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 ${
+                      isTopRank
+                        ? 'border-emerald-400 bg-[rgba(56,189,248,0.09)]'
+                        : 'border-white/8 bg-[rgba(30,41,59,0.36)]'
+                    }`}
                   >
-                    <HStack spacing={2.5} minW={0}>
-                      <Badge
-                        px={2}
-                        py={0.5}
-                        borderRadius="md"
-                        fontSize="10px"
-                        bg={isTopRank ? 'brand.500' : 'whiteAlpha.300'}
-                        color={isTopRank ? 'slate.950' : 'slate.200'}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className={`rounded-md px-2 py-0.5 text-[10px] font-medium uppercase ${
+                          isTopRank ? 'bg-emerald-500 text-slate-950' : 'bg-white/12 text-slate-200'
+                        }`}
                       >
                         #{rank}
-                      </Badge>
+                      </span>
                       <PlayerHeadshot
                         code={leader.photoCode}
                         name={leader.name}
                         size={isTopRank ? 'md' : 'sm'}
                       />
-                      <Box minW={0}>
-                        <Text
-                          noOfLines={1}
-                          fontSize={isTopRank ? 'sm' : 'xs'}
-                          fontWeight={isTopRank ? 'bold' : 'semibold'}
-                          color="white"
+                      <div className="min-w-0">
+                        <p
+                          className={`truncate text-white ${
+                            isTopRank ? 'text-sm font-bold' : 'text-xs font-semibold'
+                          }`}
                         >
                           {leader.name}
-                        </Text>
-                        <Text fontSize="xs" color="slate.400">
+                        </p>
+                        <p className="text-xs text-slate-400">
                           {leader.teamAbbr}
-                        </Text>
-                      </Box>
-                    </HStack>
-                    <Text
-                      fontSize={isTopRank ? 'md' : 'sm'}
-                      fontWeight={isTopRank ? 'extrabold' : 'bold'}
-                      color={isTopRank ? 'brand.300' : 'slate.200'}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`${isTopRank ? 'text-base font-extrabold text-emerald-300' : 'text-sm font-bold text-slate-200'}`}
                     >
                       {leader.valueLabel}
-                    </Text>
-                  </HStack>
+                    </span>
+                  </div>
                 );
               })}
               {card.contextText ? (
-                <Text pt={1} fontSize="xs" color="slate.400">
+                <p className="pt-1 text-xs text-slate-400">
                   {card.contextText}
-                </Text>
+                </p>
               ) : null}
-            </Stack>
+            </div>
           </DashboardCard>
         ))}
-      </HStack>
-    </Box>
+      </div>
+    </div>
   );
 };
 

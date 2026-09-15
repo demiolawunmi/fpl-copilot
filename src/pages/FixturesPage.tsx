@@ -1,14 +1,5 @@
 import { useMemo, useState } from 'react';
-import {
-  Alert,
-  AlertDescription,
-  Box,
-  Grid,
-  GridItem,
-  Spinner,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
+import { Loader2 } from 'lucide-react';
 import GWHeader from '../components/gw-overview/GWHeader';
 import FixturesCard from '../components/gw-overview/FixturesCard';
 import FdrMatrixTable from '../components/fixtures-page/FdrMatrixTable';
@@ -17,6 +8,7 @@ import { mockFixtures } from '../data/gwOverviewMocks';
 import { useTeamId } from '../context/TeamIdContext';
 import { useFplData } from '../hooks/useFplData';
 import { useFixturesRatings } from '../hooks/useFixturesRatings';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const FixturesPage = () => {
   const { teamId } = useTeamId();
@@ -54,39 +46,27 @@ const FixturesPage = () => {
   const ratings = useFixturesRatings(fpl.bootstrap, currentSelected);
 
   return (
-    <Stack flex="1" spacing={6} px={{ base: 4, md: 6, xl: 10 }} py={{ base: 6, xl: 8 }}>
+    <div className="flex flex-1 flex-col gap-6 px-4 py-6 md:px-6 xl:px-10 xl:py-8">
       {fpl.loading ? (
-        <Stack align="center" justify="center" py={24} spacing={3}>
-          <Spinner size="lg" color="brand.400" thickness="3px" />
-          <Text fontSize="sm" color="slate.400">
+        <div className="flex flex-col items-center justify-center gap-3 py-24">
+          <Loader2 size={32} className="animate-spin text-emerald-400" />
+          <p className="text-sm text-slate-400">
             Loading your FPL data…
-          </Text>
-        </Stack>
+          </p>
+        </div>
       ) : (
         <>
           {fpl.error ? (
-            <Alert
-              status="warning"
-              borderRadius="xl"
-              bg="rgba(234, 179, 8, 0.08)"
-              borderWidth="1px"
-              borderColor="rgba(234, 179, 8, 0.2)"
-            >
-              <AlertDescription color="yellow.300" fontSize="sm">
+            <Alert className="rounded-2xl border border-[rgba(234,179,8,0.2)] bg-[rgba(234,179,8,0.08)]">
+              <AlertDescription className="text-sm text-yellow-300">
                 ⚠ Couldn&apos;t load live data — showing mock fixtures where needed. ({fpl.error})
               </AlertDescription>
             </Alert>
           ) : null}
 
           {ratings.error && !ratings.loading ? (
-            <Alert
-              status="info"
-              borderRadius="xl"
-              bg="rgba(59, 130, 246, 0.08)"
-              borderWidth="1px"
-              borderColor="rgba(59, 130, 246, 0.2)"
-            >
-              <AlertDescription color="blue.200" fontSize="sm">
+            <Alert className="rounded-2xl border border-[rgba(59,130,246,0.2)] bg-[rgba(59,130,246,0.08)]">
+              <AlertDescription className="text-sm text-blue-200">
                 {ratings.error}
               </AlertDescription>
             </Alert>
@@ -102,47 +82,36 @@ const FixturesPage = () => {
             />
           ) : null}
 
-          <Grid
-            templateColumns={{ base: '1fr', xl: 'minmax(0, 1.2fr) minmax(0, 0.8fr)' }}
-            gap={6}
-            alignItems="start"
-          >
-            <GridItem>
+          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+            <div>
               <FixturesCard
                 fixtures={fixtures}
                 isCurrentGw={currentSelected === fpl.currentGW}
               />
-            </GridItem>
-            <GridItem>
-              <Stack spacing={3}>
+            </div>
+            <div>
+              <div className="flex flex-col gap-3">
                 {ratings.loading ? (
-                  <Stack direction="row" align="center" spacing={2} color="slate.500">
-                    <Spinner size="sm" color="brand.400" thickness="2px" />
-                    <Text fontSize="xs">Loading Elo / FDR from API…</Text>
-                  </Stack>
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <Loader2 size={18} className="animate-spin text-emerald-400" />
+                    <span className="text-xs">Loading Elo / FDR from API…</span>
+                  </div>
                 ) : null}
                 {ratings.data ? (
                   <TeamEloTable teams={ratings.data.teams} />
                 ) : (
-                  <Box
-                    borderWidth="1px"
-                    borderColor="whiteAlpha.200"
-                    borderRadius="2xl"
-                    bg="slate.900"
-                    px={6}
-                    py={8}
-                  >
-                    <Text fontSize="sm" color="slate.500">
+                  <div className="rounded-2xl border border-white/8 bg-slate-900 px-6 py-8">
+                    <p className="text-sm text-slate-500">
                       Team ratings will appear here once bootstrap data is available.
-                    </Text>
-                  </Box>
+                    </p>
+                  </div>
                 )}
-              </Stack>
-            </GridItem>
-          </Grid>
+              </div>
+            </div>
+          </div>
 
           {ratings.data ? (
-            <Stack spacing={6}>
+            <div className="flex flex-col gap-6">
               <FdrMatrixTable
                 title="Official FPL FDR"
                 description="Integer difficulty (1–5) from fantasy.premierleague.com via your API /api/fdr/team (official_fpl_fdr)."
@@ -157,11 +126,11 @@ const FixturesPage = () => {
                 teams={ratings.data.teams}
                 mode="elo"
               />
-            </Stack>
+            </div>
           ) : null}
         </>
       )}
-    </Stack>
+    </div>
   );
 };
 

@@ -1,16 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Box,
-  Button,
-  Flex,
-  HStack,
-  Icon,
-  Image,
-  Text,
-} from "@chakra-ui/react";
 import { FiChevronRight } from "react-icons/fi";
 import type { Fixture } from "../../data/gwOverviewMocks";
-import { DashboardCard, DashboardHeader, cardScrollSx } from "../ui/dashboard";
+import { Button } from "@/components/ui/button";
+import { DashboardCard, DashboardHeader } from "@/components/ui/primitives";
 
 interface Props {
   fixtures: Fixture[];
@@ -25,30 +17,22 @@ const Badge = ({ abbr, color, badge }: { abbr: string; color: string; badge?: st
   const [failed, setFailed] = useState(false);
   if (badge && !failed) {
     return (
-      <Image
+      <img
         src={badge}
         alt={abbr}
-        boxSize={8}
-        objectFit="contain"
+        className="size-8 object-contain"
         loading="lazy"
         onError={() => setFailed(true)}
       />
     );
   }
   return (
-    <Flex
-      boxSize={8}
-      flexShrink={0}
-      align="center"
-      justify="center"
-      borderRadius="full"
-      fontSize="10px"
-      fontWeight="bold"
-      color="white"
-      bg={color}
+    <div
+      className="flex size-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+      style={{ backgroundColor: color }}
     >
       {abbr}
-    </Flex>
+    </div>
   );
 };
 
@@ -106,96 +90,69 @@ export default function FixturesCard({ fixtures, isCurrentGw = true, heightPx }:
 
   return (
     <DashboardCard
-      display="flex"
-      flexDirection="column"
-      h={heightPx ? `${heightPx}px` : "520px"}
+      className="flex flex-col"
+      style={{ height: heightPx ? `${heightPx}px` : "520px" }}
     >
       <DashboardHeader
         title="Fixtures"
         action={
-          <HStack spacing={2}>
-            <Text fontSize="xs" color="slate.500">
-              Order
-            </Text>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">Order</span>
             <Button
               type="button"
-              size="xs"
+              size="sm"
               variant="outline"
-              borderColor="whiteAlpha.200"
-              color="slate.200"
-              _hover={{ bg: "whiteAlpha.100" }}
+              className="h-6 border-white/8 px-2 text-xs text-slate-200 hover:bg-white/6"
               onClick={() => setOrder((o) => (o === "newest" ? "oldest" : "newest"))}
             >
               {order === "newest" ? "Newest → Oldest" : "Oldest → Newest"}
             </Button>
-          </HStack>
+          </div>
         }
       />
 
-      <Box flex="1" overflow="auto" sx={cardScrollSx}>
+      <div className="card-scroll flex-1 overflow-auto">
         {groupKeys.map((date) => {
           const matches = grouped[date];
           return (
-            <Box key={date}>
+            <div key={date}>
               {/* date header */}
-              <Box px={5} py={2} bgGradient="linear(to-r, slate.800, slate.900)">
-                <Text fontSize="xs" fontWeight="semibold" color="slate.400">
-                  {date}
-                </Text>
-              </Box>
+              <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-5 py-2">
+                <p className="text-xs font-semibold text-slate-400">{date}</p>
+              </div>
 
               {matches.map((m, i) => (
-                <Flex
+                <div
                   key={`${date}-${i}`}
-                  align="center"
-                  gap={3}
-                  px={5}
-                  py={3}
-                  borderBottomWidth="1px"
-                  borderColor="whiteAlpha.100"
-                  _hover={{ bg: "whiteAlpha.50" }}
+                  className="flex items-center gap-3 border-b border-white/6 px-5 py-3 hover:bg-white/4"
                 >
                   {/* home */}
                   <Badge abbr={m.homeAbbr} color={m.homeColor} badge={m.homeBadge} />
-                  <Text
-                    w="20"
-                    noOfLines={1}
-                    textAlign="right"
-                    fontSize="sm"
-                    color="slate.300"
-                  >
+                  <span className="line-clamp-1 w-20 text-right text-sm text-slate-300">
                     {m.homeTeam}
-                  </Text>
+                  </span>
 
                   {/* score */}
-                  <Box
-                    mx={2}
-                    minW="56px"
-                    rounded="lg"
-                    bg="whiteAlpha.100"
-                    px={3}
-                    py={1}
-                    textAlign="center"
-                  >
-                    <Text fontSize="sm" fontWeight="bold" color="white">
+                  <div className="mx-2 min-w-[56px] rounded-lg bg-white/6 px-3 py-1 text-center">
+                    <span className="text-sm font-bold text-white">
                       {m.homeScore} – {m.awayScore}
-                    </Text>
-                  </Box>
+                    </span>
+                  </div>
 
                   {/* away */}
-                  <Text w="20" noOfLines={1} fontSize="sm" color="slate.300">
+                  <span className="line-clamp-1 w-20 text-sm text-slate-300">
                     {m.awayTeam}
-                  </Text>
+                  </span>
                   <Badge abbr={m.awayAbbr} color={m.awayColor} badge={m.awayBadge} />
 
                   {/* chevron */}
-                  <Icon as={FiChevronRight} boxSize={4} color="slate.600" ml="auto" />
-                </Flex>
+                  <FiChevronRight size={16} className="ml-auto text-slate-600" />
+                </div>
               ))}
-            </Box>
+            </div>
           );
         })}
-      </Box>
+      </div>
     </DashboardCard>
   );
 }

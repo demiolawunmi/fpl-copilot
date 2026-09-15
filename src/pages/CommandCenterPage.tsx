@@ -1,29 +1,9 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import {
-  Box,
-  Button,
-  FormControl,
-  FormHelperText,
-  FormLabel,
-  Grid,
-  GridItem,
-  Heading,
-  Modal,
-  ModalBody,
-  ModalCloseButton,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalOverlay,
-  NumberDecrementStepper,
-  NumberIncrementStepper,
-  NumberInput,
-  NumberInputField,
-  NumberInputStepper,
-  Stack,
-  Text,
-  useToast,
-} from '@chakra-ui/react';
+import { toast } from 'sonner';
+import { ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTeamId } from '../context/TeamIdContext';
 import {
@@ -44,6 +24,7 @@ import type {
 
 // Import components
 import StatusStrip from '../components/command-center/StatusStrip';
+import SeasonStatusBanner from '../components/command-center/SeasonStatusBanner';
 import PitchCard from '../components/gw-overview/PitchCard';
 import AICommandSummary from '../components/command-center/AICommandSummary';
 import InjuriesSuspensionsCard from '../components/command-center/InjuriesSuspensionsCard';
@@ -57,7 +38,7 @@ import ModelComparisonPanel from '../components/command-center/ModelComparisonPa
 import SandboxCharts from '../components/command-center/SandboxCharts';
 import AskCopilotChat from '../components/command-center/AskCopilotChat';
 import VideoInsightsStrip from '../components/command-center/VideoInsightsStrip';
-import { DashboardCard } from '../components/ui/dashboard';
+import { DashboardCard } from '@/components/ui/primitives';
 
 // Command Center hook – targets the NEXT GW and uses /api/fpl/my-team picks
 import { useCommandCenterData } from '../hooks/useCommandCenterData';
@@ -80,7 +61,7 @@ import {
   type CopilotBlendSubmitRequest,
   type CopilotBlendSnapshot,
 } from '../api/backend';
-import { elementTypeToPosition } from '../api/fpl/fpl';
+import { elementTypeToPosition, getPlayerPhotoUrl } from '../api/fpl/fpl';
 
 type Tab = 'pick-team' | 'sandbox';
 
@@ -219,7 +200,6 @@ const CommandCenterPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<Tab>(() => parseInitialTab(location.search));
-  const toast = useToast();
 
   // Dedicated Command Center hook – always targets next GW, uses backend picks
   const cc = useCommandCenterData(teamId);
@@ -271,47 +251,47 @@ const CommandCenterPage = () => {
         const code = completedBlendPayload.degraded_mode.code ?? 'FALLBACK';
         const msg = completedBlendPayload.degraded_mode.message ?? '';
         return (
-          <Text color="orange.300" fontWeight="medium">
-            <Box as="span" mr={1}>⚠️</Box>
+          <p className="font-medium text-orange-300">
+            <span className="mr-1">⚠️</span>
             Degraded Output ({code}): {msg}
-          </Text>
+          </p>
         );
       }
 
       if (transferCount === 0) {
         // Valid zero: model intentionally returned no confident suggestions
         return (
-          <Text color="blue.300" fontWeight="medium">
-            <Box as="span" mr={1}>ℹ️</Box>
+          <p className="font-medium text-blue-300">
+            <span className="mr-1">ℹ️</span>
             No confident transfer suggestions. Confidence: {confidencePct}%
-          </Text>
+          </p>
         );
       }
 
       return (
-        <Text color="green.300" fontWeight="medium">
-          <Box as="span" mr={1}>✅</Box>
+        <p className="font-medium text-green-300">
+          <span className="mr-1">✅</span>
           Blend ready: {transferCount} transfer suggestion(s), {confidencePct}% confidence.
-        </Text>
+        </p>
       );
     }
 
     if (blendApplyState.phase === 'running' || blendApplyState.phase === 'submitting' || blendApplyState.phase === 'queued') {
-      return <Text color="blue.200">{blendApplyState.message ?? 'Blend job in progress...'}</Text>;
+      return <p className="text-blue-200">{blendApplyState.message ?? 'Blend job in progress...'}</p>;
     }
 
     if (blendApplyState.phase === 'failed') {
       const errorCode = blendApplyState.error?.error.code;
       const baseMsg = blendApplyState.message ?? 'Blend job failed.';
       return (
-        <Text color="red.300" fontWeight="medium">
-          <Box as="span" mr={1}>❌</Box>
+        <p className="font-medium text-red-300">
+          <span className="mr-1">❌</span>
           {errorCode ? `${baseMsg} [${errorCode}]` : baseMsg}
-        </Text>
+        </p>
       );
     }
 
-    return <Text color="slate.300">{blendApplyState.message}</Text>;
+    return <p className="text-slate-300">{blendApplyState.message}</p>;
   }, [blendApplyState, completedBlendPayload]);
 
   const realSquad = useMemo(() => {
@@ -571,10 +551,23 @@ const CommandCenterPage = () => {
       return;
     }
 
+    const blendableSources = modelSources.filter((source) => source.backendField);
+    const totalWeight = blendableSources.reduce((sum, source) => sum + source.weight, 0);
+    if (totalWeight <= 0) {
+      setBlendApplyState(getBlendFailureState({
+        message: 'Set at least one source weight above 0 before applying.',
+        retryable: false,
+      }));
+      return;
+    }
+
+    // The backend requires source_weights to sum to exactly 1.0, but the UI
+    // allows any total up to 100 — normalise so the relative weights are kept
+    // regardless of how the sliders happen to add up.
     const sourceWeights: Record<string, number> = {};
-    for (const source of modelSources) {
+    for (const source of blendableSources) {
       if (!source.backendField) continue;
-      sourceWeights[source.backendField] = source.weight / 100;
+      sourceWeights[source.backendField] = source.weight / totalWeight;
     }
 
     const sandboxTransferCount = sandboxActions.filter((action) => action.type === 'transfer').length;
@@ -724,22 +717,16 @@ const CommandCenterPage = () => {
 
   function handleRefreshAISummary() {
     if (isBlendInvalid) {
-      toast({
-        title: 'Blend weights invalid',
+      toast.warning('Blend weights invalid', {
         description: 'Total exceeds 100%. Open AI Sandbox and reduce source weights before refreshing.',
-        status: 'warning',
         duration: 6000,
-        isClosable: true,
       });
       return;
     }
     if (nextGW <= 0) {
-      toast({
-        title: 'Gameweek not ready',
+      toast.warning('Gameweek not ready', {
         description: 'Wait for team data to load, then try again.',
-        status: 'warning',
         duration: 5000,
-        isClosable: true,
       });
       return;
     }
@@ -782,7 +769,7 @@ const CommandCenterPage = () => {
           points: 0,
           minutesRisk: 'Unknown',
           injuryStatus: 'Available',
-          photoUrl: `https://resources.premierleague.com/premierleague25/photos/players/110x140/${el.code}.png`,
+          photoUrl: getPlayerPhotoUrl(el.code),
           opponents: fixture?.fixtures?.map((f) => `${f.is_home ? 'H' : 'A'} ${f.opponent_short}`) ?? [],
         };
       }
@@ -801,13 +788,9 @@ const CommandCenterPage = () => {
     const newBank = teamStatus.bank + sandboxBankDelta + priceDelta;
 
     if (newBank < 0) {
-      toast({
-        title: 'Insufficient funds',
+      toast.error('Insufficient funds', {
         description: `This transfer would leave you with £${newBank.toFixed(1)}m. You need more bank.`,
-        status: 'error',
         duration: 4000,
-        isClosable: true,
-        position: 'top-right',
       });
       return;
     }
@@ -827,14 +810,12 @@ const CommandCenterPage = () => {
       ? ` (−${(transfersMade - freeTransfers) * 4} pts hit)`
       : '';
 
-    toast({
-      title: 'Transfer applied',
-      description: `${outPlayer?.name ?? 'Player'} out → ${inPlayer.name} in${hitMsg}`,
-      status: transfersMade > freeTransfers ? 'warning' : 'success',
-      duration: 4000,
-      isClosable: true,
-      position: 'top-right',
-    });
+    const desc = `${outPlayer?.name ?? 'Player'} out → ${inPlayer.name} in${hitMsg}`;
+    if (transfersMade > freeTransfers) {
+      toast.warning('Transfer applied', { description: desc, duration: 4000 });
+    } else {
+      toast.success('Transfer applied', { description: desc, duration: 4000 });
+    }
   };
 
   const handleSetCaptain = (playerId: number) => {
@@ -855,7 +836,7 @@ const CommandCenterPage = () => {
     const player = currentSandboxSquad.find((p) => p.id === playerId);
     if (!player || player.isBench) return;
     if (player.isCaptain) {
-      toast({ title: 'Cannot assign', description: 'The captain cannot also be vice-captain.', status: 'info', duration: 3000, isClosable: true, position: 'top-right' });
+      toast.info('Cannot assign', { description: 'The captain cannot also be vice-captain.', duration: 3000 });
       return;
     }
     const newSquad = currentSandboxSquad.map((p) => {
@@ -910,13 +891,9 @@ const CommandCenterPage = () => {
       const b = { ...squad[idxB] };
 
       if (a.isBench === b.isBench) {
-        toast({
-          title: 'Invalid swap',
+        toast.info('Invalid swap', {
           description: 'Select one starter and one bench player to swap.',
-          status: 'info',
           duration: 3000,
-          isClosable: true,
-          position: 'top-right',
         });
         setSwapSelection(null);
         return;
@@ -935,13 +912,9 @@ const CommandCenterPage = () => {
 
       const err = validateFormation(simulated);
       if (err) {
-        toast({
-          title: 'Invalid formation',
+        toast.warning('Invalid formation', {
           description: err,
-          status: 'warning',
           duration: 4000,
-          isClosable: true,
-          position: 'top-right',
         });
         setSwapSelection(null);
         return;
@@ -954,7 +927,7 @@ const CommandCenterPage = () => {
       ]);
       setSwapSelection(null);
     },
-    [swapSelection, currentSandboxSquad, toast],
+    [swapSelection, currentSandboxSquad],
   );
 
   const handleOpenOptimizationDialog = useCallback(() => {
@@ -966,13 +939,9 @@ const CommandCenterPage = () => {
     const idStr = teamId?.trim();
     const fplTeamId = idStr ? Number.parseInt(idStr, 10) : Number.NaN;
     if (idStr == null || idStr === "" || !Number.isFinite(fplTeamId) || fplTeamId <= 0) {
-      toast({
-        title: 'FPL team ID required',
+      toast.warning('FPL team ID required', {
         description: 'Set your team ID in the app (navbar) so the optimizer knows which squad to run for.',
-        status: 'warning',
         duration: 6000,
-        isClosable: true,
-        position: 'top-right',
       });
       return;
     }
@@ -981,36 +950,31 @@ const CommandCenterPage = () => {
     setOptimizationLoading(true);
     try {
       const res = await runAirsenal({
-        action: 'optimize',
+        action: 'pipeline',
         fpl_team_id: fplTeamId,
         gameweek: 'auto',
         weeks_ahead: w,
       });
       setOptimizationDialogOpen(false);
-      toast({
-        title: 'AIrsenal optimization finished',
-        description: res.ok
-          ? `Action “${res.action}” completed (${res.steps?.length ?? 0} step(s)).`
-          : `Completed with ok: false for “${res.action}”.`,
-        status: res.ok ? 'success' : 'warning',
-        duration: 8000,
-        isClosable: true,
-        position: 'top-right',
-      });
+      const desc = res.ok
+        ? `Action “${res.action}” completed (${res.steps?.length ?? 0} step(s)).`
+        : `Completed with ok: false for “${res.action}”.`;
+      if (res.ok) {
+        toast.success('AIrsenal pipeline finished', { description: desc, duration: 8000 });
+        window.setTimeout(() => window.location.reload(), 2000);
+      } else {
+        toast.warning('AIrsenal pipeline finished', { description: desc, duration: 8000 });
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Request failed';
-      toast({
-        title: 'AIrsenal optimization failed',
+      toast.error('AIrsenal run failed', {
         description: message,
-        status: 'error',
         duration: 12000,
-        isClosable: true,
-        position: 'top-right',
       });
     } finally {
       setOptimizationLoading(false);
     }
-  }, [teamId, toast, weeksAhead]);
+  }, [teamId, weeksAhead]);
 
   const mappedPickTeamSquad = currentSandboxSquad.map((p) => {
     const fixture = predictions.fixturesByName.get(norm(p.name));
@@ -1089,68 +1053,64 @@ const CommandCenterPage = () => {
   });
 
   const loadingCard = (
-    <DashboardCard p={6}>
-      <Text textAlign="center" color="slate.400">Loading squad...</Text>
+    <DashboardCard className="p-6">
+      <p className="text-center text-slate-400">Loading squad...</p>
     </DashboardCard>
   );
 
   const errorCard = (
-    <DashboardCard p={6} bg="rgba(127, 29, 29, 0.18)" borderColor="rgba(248, 113, 113, 0.22)">
-      <Text textAlign="center" color="red.300">{cc.error}</Text>
+    <DashboardCard className="p-6 bg-[rgba(127,29,29,0.18)] border-[rgba(248,113,113,0.22)]">
+      <p className="text-center text-red-300">{cc.error}</p>
     </DashboardCard>
   );
 
   const emptyMyTeamCard = (
-    <DashboardCard p={6}>
-      <Stack spacing={2} align="center">
-        <Text textAlign="center" color="slate.300" fontWeight="semibold">No backend my_team.json squad loaded</Text>
-        <Text textAlign="center" color="slate.500" fontSize="sm">
+    <DashboardCard className="p-6">
+      <div className="flex flex-col items-center gap-2">
+        <p className="text-center font-semibold text-slate-300">No backend my_team.json squad loaded</p>
+        <p className="text-center text-sm text-slate-500">
           Command Center is waiting for `/api/files/my_team` so it can render your real draft, bank, transfers, and chips.
-        </Text>
-      </Stack>
+        </p>
+      </div>
     </DashboardCard>
   );
 
   return (
-    <Stack flex="1" spacing={6} px={{ base: 4, md: 6, xl: 10 }} py={{ base: 6, xl: 8 }}>
-      <Stack spacing={2}>
-        <Heading size="lg">Command Center</Heading>
-        <Text fontSize="sm" color="slate.400">
+    <div className="flex flex-1 flex-col gap-6 px-4 py-6 md:px-6 xl:px-10 xl:py-8">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-bold leading-[1.33] text-white">Command Center</h1>
+        <p className="text-sm text-slate-400">
           Gameweek {nextGW || '…'} • Team: {teamName} • ID: {teamId}
-        </Text>
-      </Stack>
+        </p>
+      </div>
 
       <StatusStrip status={teamStatus} />
 
-      <DashboardCard overflow="hidden">
-        <Box borderBottomWidth="1px" borderColor="whiteAlpha.100" display="flex">
+      <SeasonStatusBanner />
+
+      <DashboardCard>
+        <div className="flex border-b border-white/6">
           {(['pick-team', 'sandbox'] as const).map((tab) => (
-            <Button
+            <button
               key={tab}
+              type="button"
               onClick={() => setActiveTab(tab)}
-              flex="1"
-              borderRadius="0"
-              variant="ghost"
-              py={3}
-              px={4}
-              fontSize="sm"
-              fontWeight="semibold"
-              textTransform="capitalize"
-              color={activeTab === tab ? 'brand.400' : 'slate.400'}
-              borderBottomWidth="2px"
-              borderBottomColor={activeTab === tab ? 'brand.400' : 'transparent'}
-              _hover={{ color: 'white', bg: 'transparent' }}
+              className={cn(
+                'flex-1 cursor-pointer rounded-none border-b-2 px-4 py-3 text-sm font-semibold capitalize transition-colors',
+                activeTab === tab ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400',
+                'hover:bg-transparent hover:text-white',
+              )}
             >
               {tab === 'pick-team' ? `Pick Team (GW ${nextGW || '…'})` : 'AI Sandbox'}
-            </Button>
+            </button>
           ))}
-        </Box>
+        </div>
 
-        <Box p={{ base: 4, md: 6 }}>
+        <div className="p-4 md:p-6">
           {activeTab === 'pick-team' ? (
-            <Grid templateColumns={{ base: '1fr', xl: 'repeat(3, minmax(0, 1fr))' }} gap={6}>
-              <GridItem colSpan={{ base: 1, xl: 2 }}>
-                <Stack spacing={6}>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+              <div className="col-span-1 xl:col-span-2">
+                <div className="flex flex-col gap-6">
                   {cc.loading ? loadingCard : !hasLiveMyTeam ? (cc.error ? errorCard : emptyMyTeamCard) : (
                     <PitchCard
                       squad={mappedPickTeamSquad}
@@ -1167,11 +1127,11 @@ const CommandCenterPage = () => {
                     isRefreshing={blendJobBusy}
                     disableRefresh={isBlendInvalid || nextGW <= 0}
                   />
-                </Stack>
-              </GridItem>
+                </div>
+              </div>
 
-              <GridItem colSpan={1}>
-                <Stack spacing={6}>
+              <div className="col-span-1">
+                <div className="flex flex-col gap-6">
                   <QuickActions
                     onAutoCaptain={handleAutoCaptain}
                     onAutoBench={handleAutoBench}
@@ -1183,11 +1143,11 @@ const CommandCenterPage = () => {
                   <BandwagonsCard bootstrapElements={bootstrapElements} />
                   <InjuriesSuspensionsCard />
                   <FixturesSnapshot fixtures={mockFixturesSnapshot} />
-                </Stack>
-              </GridItem>
-            </Grid>
+                </div>
+              </div>
+            </div>
           ) : (
-            <Stack spacing={6}>
+            <div className="flex flex-col gap-6">
               <SandboxControls
                 sandboxMode={sandboxMode}
                 onToggleSandboxMode={() => setSandboxMode(!sandboxMode)}
@@ -1206,9 +1166,9 @@ const CommandCenterPage = () => {
                 sandboxTransfersMade={sandboxActions.filter((a) => a.type === 'transfer').length}
               />
 
-              <Grid templateColumns={{ base: '1fr', xl: 'repeat(3, minmax(0, 1fr))' }} gap={6}>
-                <GridItem colSpan={{ base: 1, xl: 2 }}>
-                  <Stack spacing={6}>
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+                <div className="col-span-1 xl:col-span-2">
+                  <div className="flex flex-col gap-6">
                     <RecommendedTransfersList
                       transfers={hybridRecommendedTransfers}
                       onApplyTransfer={handleTransfer}
@@ -1238,11 +1198,11 @@ const CommandCenterPage = () => {
                       />
                     )}
                     <SandboxCharts squad={currentSandboxSquad} />
-                  </Stack>
-                </GridItem>
+                  </div>
+                </div>
 
-                <GridItem colSpan={1}>
-                  <Stack spacing={6}>
+                <div className="col-span-1">
+                  <div className="flex flex-col gap-6">
                     <ModelComparisonPanel
                       models={modelSources}
                       blendTotal={blendTotal}
@@ -1261,88 +1221,110 @@ const CommandCenterPage = () => {
                       blendInput={savedBlendInput}
                       applyPhase={blendApplyState.phase}
                     />
-                  </Stack>
-                </GridItem>
-              </Grid>
-            </Stack>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
-        </Box>
+        </div>
       </DashboardCard>
 
       <VideoInsightsStrip videos={mockVideoInsights} />
 
-      <Modal
-        isOpen={optimizationDialogOpen}
-        onClose={() => {
-          if (!optimizationLoading) setOptimizationDialogOpen(false);
+      <Dialog
+        open={optimizationDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !optimizationLoading) setOptimizationDialogOpen(false);
         }}
-        isCentered
-        closeOnOverlayClick={!optimizationLoading}
-        closeOnEsc={!optimizationLoading}
       >
-        <ModalOverlay bg="blackAlpha.700" backdropFilter="blur(4px)" />
-        <ModalContent bg="slate.900" borderWidth="1px" borderColor="whiteAlpha.200" mx={4}>
-          <ModalHeader color="white" fontSize="md" pr={10}>
-            Run AIrsenal optimization
-          </ModalHeader>
-          <ModalCloseButton isDisabled={optimizationLoading} color="slate.400" />
-          <ModalBody pb={2}>
-            <FormControl>
-              <FormLabel color="slate.300" fontSize="sm">
-                Weeks ahead
-              </FormLabel>
-              <NumberInput
-                min={1}
-                max={38}
-                value={weeksAhead}
-                onChange={(_, valueAsNumber) => {
-                  if (Number.isNaN(valueAsNumber)) return;
-                  setWeeksAhead(clampWeeksAhead(valueAsNumber));
-                }}
-                clampValueOnBlur
-                isDisabled={optimizationLoading}
-                size="sm"
-                maxW="140px"
-              >
-                <NumberInputField
-                  bg="whiteAlpha.50"
-                  borderColor="whiteAlpha.200"
-                  color="white"
-                  rounded="md"
+        <DialogContent
+          overlayClassName="bg-black/70 backdrop-blur-[4px]"
+          className="max-w-[calc(100%-2rem)] gap-0 rounded-lg border border-white/8 bg-slate-900 p-0 sm:max-w-md"
+          onInteractOutside={(e) => {
+            if (optimizationLoading) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (optimizationLoading) e.preventDefault();
+          }}
+        >
+          <DialogHeader className="gap-0 border-b border-white/6 px-6 py-4">
+            <DialogTitle className="text-base text-white">Run AIrsenal pipeline</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-300">Weeks ahead</label>
+              <div className="relative w-[140px]">
+                <input
+                  type="number"
+                  min={1}
+                  max={38}
+                  value={weeksAhead}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (Number.isNaN(n)) return;
+                    setWeeksAhead(clampWeeksAhead(n));
+                  }}
+                  onBlur={() => setWeeksAhead(clampWeeksAhead(weeksAhead))}
+                  disabled={optimizationLoading}
+                  className="h-8 w-full rounded-md border border-white/8 bg-white/4 px-2 pr-6 text-sm text-white transition-colors hover:border-white/12 focus-visible:border-emerald-400 focus-visible:shadow-[0_0_0_1px_#34d399] focus-visible:outline-none disabled:opacity-50"
                 />
-                <NumberInputStepper>
-                  <NumberIncrementStepper borderColor="whiteAlpha.200" color="slate.300" />
-                  <NumberDecrementStepper borderColor="whiteAlpha.200" color="slate.300" />
-                </NumberInputStepper>
-              </NumberInput>
-              <FormHelperText color="slate.500" fontSize="xs">
-                Planning horizon for the run (1–38). Default is 3.
-              </FormHelperText>
-            </FormControl>
-          </ModalBody>
-          <ModalFooter gap={2} pt={2}>
-            <Button
-              variant="ghost"
-              color="slate.400"
-              size="sm"
+                <div className="absolute inset-y-0 right-0 flex w-5 flex-col overflow-hidden rounded-r-md border-l border-white/8">
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Increase"
+                    disabled={optimizationLoading}
+                    onClick={() => setWeeksAhead(clampWeeksAhead(weeksAhead + 1))}
+                    className="flex flex-1 cursor-pointer items-center justify-center border-b border-white/8 text-slate-300 hover:bg-white/6 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronUp size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Decrease"
+                    disabled={optimizationLoading}
+                    onClick={() => setWeeksAhead(clampWeeksAhead(weeksAhead - 1))}
+                    className="flex flex-1 cursor-pointer items-center justify-center text-slate-300 hover:bg-white/6 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronDown size={12} />
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">
+                Planning horizon for the run (1–38). Default is 3. Runs update DB →
+                predict → optimize → export, so it can take several minutes.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 border-t border-white/6 bg-transparent">
+            <button
+              type="button"
+              className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'text-slate-400')}
               onClick={() => setOptimizationDialogOpen(false)}
-              isDisabled={optimizationLoading}
+              disabled={optimizationLoading}
             >
               Cancel
-            </Button>
-            <Button
-              colorScheme="blue"
-              size="sm"
+            </button>
+            <button
+              type="button"
+              className={cn(buttonVariants({ size: 'sm' }), 'bg-blue-500 hover:bg-blue-600')}
               onClick={() => void handleConfirmOptimization()}
-              isLoading={optimizationLoading}
-              loadingText="Running…"
+              disabled={optimizationLoading}
             >
-              Run optimization
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </Stack>
+              {optimizationLoading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Running…
+                </>
+              ) : (
+                'Run pipeline'
+              )}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 };
 

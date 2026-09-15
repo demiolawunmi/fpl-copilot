@@ -11,6 +11,7 @@ export type FplBootstrapEventLike = {
   finished: boolean;
   is_current: boolean;
   is_next: boolean;
+  deadline_time?: string;
 };
 
 function lastFinishedEvent<T extends FplBootstrapEventLike>(events: T[]): T | undefined {
@@ -19,12 +20,21 @@ function lastFinishedEvent<T extends FplBootstrapEventLike>(events: T[]): T | un
   return finished.reduce((a, b) => (a.id >= b.id ? a : b));
 }
 
+/** Whether a gameweek's deadline has passed, i.e. the round is underway or already played. */
+function hasStarted(event: FplBootstrapEventLike): boolean {
+  if (event.finished) return true;
+  if (!event.deadline_time) return false;
+  return Date.now() >= new Date(event.deadline_time).getTime();
+}
+
 /**
  * Prefer the live round, then the upcoming deadline week, then the most recently finished round.
  *
  * If FPL still has `is_current` on a gameweek that is already `finished` while `is_next`
- * points at a later GW (e.g. stuck on GW30 with GW31 fixtures live), prefer `is_next`
- * so `/fixtures/?event=` matches the round that actually has upcoming fixtures.
+ * points at a later GW whose deadline has passed (e.g. stuck on GW30 while GW31 is
+ * underway), prefer `is_next` so `/fixtures/?event=` matches the round actually in play.
+ * If the next GW's deadline has not passed yet, keep the current (finished) round so that
+ * stats/points for the round just played are shown instead of an empty upcoming one.
  */
 export function resolvePrimaryGameweekEvent<T extends FplBootstrapEventLike>(
   events: T[],
@@ -33,7 +43,7 @@ export function resolvePrimaryGameweekEvent<T extends FplBootstrapEventLike>(
   const byNext = events.find((e) => e.is_next);
   const byLastFinished = lastFinishedEvent(events);
 
-  if (byCurrent?.finished && byNext && byNext.id > byCurrent.id) {
+  if (byCurrent?.finished && byNext && byNext.id > byCurrent.id && hasStarted(byNext)) {
     return byNext;
   }
 

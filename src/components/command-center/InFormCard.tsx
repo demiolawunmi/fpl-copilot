@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Avatar, Box, HStack, Stack, Text } from '@chakra-ui/react';
 import { getFormLast4 } from '../../api/backend';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import { getPlayerPhotoUrl } from '../../api/fpl/fpl';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 type NormalizedFormPlayer = {
   id: number;
@@ -27,8 +28,16 @@ interface Props {
 
 const resolvePhotoUrl = (code: number | undefined): string | undefined => {
   if (!code) return undefined;
-  return `https://resources.premierleague.com/premierleague25/photos/players/110x140/${code}.png`;
+  return getPlayerPhotoUrl(code);
 };
+
+const getInitials = (name: string) =>
+  name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
 
 type CachedFormPlayer = Omit<NormalizedFormPlayer, 'photoUrl'>;
 
@@ -119,41 +128,51 @@ const InFormCard = ({ bootstrapElements }: Props) => {
   return (
     <DashboardCard>
       <DashboardHeader title="In Form (Last 4)" description="Players performing well recently" />
-      <Box px={5} py={4} maxH="24rem" overflowY="auto" sx={cardScrollSx}>
+      <div className="card-scroll max-h-96 overflow-y-auto px-5 py-4">
         {loading ? (
-          <Text py={4} textAlign="center" fontSize="sm" color="slate.400">Loading...</Text>
+          <p className="py-4 text-center text-sm text-slate-400">Loading...</p>
         ) : error ? (
-          <Text py={4} textAlign="center" fontSize="sm" color="red.300">{error}</Text>
+          <p className="py-4 text-center text-sm text-red-300">{error}</p>
         ) : players.length === 0 ? (
-          <Text py={4} textAlign="center" fontSize="sm" color="slate.400">No data available</Text>
+          <p className="py-4 text-center text-sm text-slate-400">No data available</p>
         ) : (
-          <Stack spacing={3}>
+          <div className="flex flex-col gap-3">
             {players.map((player, idx) => (
-              <Box key={player.id} pb={3} borderBottomWidth={idx === players.length - 1 ? '0' : '1px'} borderColor="whiteAlpha.100">
-                <HStack align="flex-start" justify="space-between" gap={2}>
-                  <HStack align="center" spacing={2} flex="1" minW={0}>
-                    <Text w={5} flexShrink={0} fontSize="xs" fontWeight="bold" color="slate.500">{idx + 1}</Text>
-                    <Avatar size="xs" name={player.name} src={player.photoUrl} bg="slate.700" color="slate.300" />
-                    <Box minW={0}>
-                      <Text noOfLines={1} fontSize="sm" fontWeight="semibold" color="white">{player.name}</Text>
-                      <Text fontSize="xs" color="slate.400">{player.team}</Text>
-                    </Box>
-                  </HStack>
-                  <Box textAlign="right" flexShrink={0}>
-                    <Text fontSize="sm" fontWeight="bold" color="brand.400">{player.last4Points}</Text>
-                    <Text fontSize="10px" color="slate.500">pts</Text>
-                  </Box>
-                </HStack>
-                <HStack mt={1.5} ml={10} spacing={3} fontSize="xs" wrap="wrap">
-                  <HStack spacing={1}><Text color="slate.500">Min:</Text><Text color="slate.300" fontWeight="medium">{player.last4Minutes}</Text></HStack>
-                  {player.xG !== undefined ? <HStack spacing={1}><Text color="slate.500">xG:</Text><Text color="slate.300" fontWeight="medium">{Number(player.xG).toFixed(2)}</Text></HStack> : null}
-                  {player.xA !== undefined ? <HStack spacing={1}><Text color="slate.500">xA:</Text><Text color="slate.300" fontWeight="medium">{Number(player.xA).toFixed(2)}</Text></HStack> : null}
-                </HStack>
-              </Box>
+              <div
+                key={player.id}
+                className={
+                  idx === players.length - 1
+                    ? 'pb-3'
+                    : 'border-b border-white/6 pb-3'
+                }
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="w-5 shrink-0 text-xs font-bold text-slate-500">{idx + 1}</span>
+                    <Avatar size="sm" className="size-6 bg-slate-700 text-slate-300">
+                      {player.photoUrl ? <AvatarImage src={player.photoUrl} alt={player.name} /> : null}
+                      <AvatarFallback>{getInitials(player.name)}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white">{player.name}</p>
+                      <p className="text-xs text-slate-400">{player.team}</p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-sm font-bold text-emerald-400">{player.last4Points}</p>
+                    <p className="text-[10px] text-slate-500">pts</p>
+                  </div>
+                </div>
+                <div className="ml-10 mt-1.5 flex flex-wrap items-center gap-3 text-xs">
+                  <span className="flex items-center gap-1"><span className="text-slate-500">Min:</span><span className="font-medium text-slate-300">{player.last4Minutes}</span></span>
+                  {player.xG !== undefined ? <span className="flex items-center gap-1"><span className="text-slate-500">xG:</span><span className="font-medium text-slate-300">{Number(player.xG).toFixed(2)}</span></span> : null}
+                  {player.xA !== undefined ? <span className="flex items-center gap-1"><span className="text-slate-500">xA:</span><span className="font-medium text-slate-300">{Number(player.xA).toFixed(2)}</span></span> : null}
+                </div>
+              </div>
             ))}
-          </Stack>
+          </div>
         )}
-      </Box>
+      </div>
     </DashboardCard>
   );
 };

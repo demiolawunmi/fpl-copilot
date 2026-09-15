@@ -1,85 +1,57 @@
-import {
-  Badge,
-  Center,
-  Heading,
-  Spinner,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
+import { Loader2 } from 'lucide-react';
 import { useTeamId } from '../context/TeamIdContext';
 import { useFplData } from '../hooks/useFplData';
-import { DashboardCard } from '../components/ui/dashboard';
+import { Badge } from '@/components/ui/badge';
+import { DashboardCard } from '@/components/ui/primitives';
 
 const HomePage = () => {
   const { teamId } = useTeamId();
   const fpl = useFplData(teamId);
 
   return (
-    <Center flex="1" px={8} py={12}>
-      <Stack spacing={6} align="center" textAlign="center" w="full" maxW="2xl">
-        <Heading size="xl">Welcome to FPL Copilot</Heading>
+    <div className="flex flex-1 items-center justify-center px-8 py-12">
+      <div className="flex w-full max-w-2xl flex-col items-center gap-6 text-center">
+        <h1 className="text-4xl font-bold leading-[1.33]">Welcome to FPL Copilot</h1>
 
         {fpl.loading ? (
-          <Stack direction="row" align="center" spacing={3} color="slate.400">
-            <Spinner color="brand.400" thickness="3px" />
-            <Text fontSize="sm">Loading team info…</Text>
-          </Stack>
+          <div className="flex items-center gap-3 text-slate-400">
+            <Loader2 size={24} className="animate-spin text-emerald-400" />
+            <span className="text-sm">Loading team info…</span>
+          </div>
         ) : null}
 
         {!fpl.loading && fpl.gwInfo ? (
-          <DashboardCard w="full" maxW="xl" px={10} py={8}>
-            <Stack spacing={4} align="center">
-              <Text fontSize="lg" fontWeight="semibold" color="white">
+          <DashboardCard className="w-full max-w-xl px-10 py-8">
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-lg font-semibold text-white">
                 {fpl.gwInfo.teamName}
-              </Text>
-              <Text fontSize="sm" color="slate.400">
+              </p>
+              <p className="text-sm text-slate-400">
                 {fpl.gwInfo.manager}
-              </Text>
-              <Badge
-                borderRadius="full"
-                px={4}
-                py={1.5}
-                fontSize="sm"
-                fontFamily="mono"
-                textTransform="none"
-                bg="rgba(16, 185, 129, 0.12)"
-                color="brand.300"
-                borderWidth="1px"
-                borderColor="rgba(16, 185, 129, 0.22)"
-              >
+              </p>
+              <Badge className="rounded-full border border-[rgba(16,185,129,0.22)] bg-[rgba(16,185,129,0.12)] px-4 py-1.5 font-mono text-sm normal-case text-emerald-300">
                 Team ID: {fpl.gwInfo.teamId}
               </Badge>
-              <Text fontSize="xs" color="slate.500">
+              <p className="text-xs text-slate-500">
                 Current Gameweek: {fpl.gwInfo.gameweek}
-              </Text>
-            </Stack>
+              </p>
+            </div>
           </DashboardCard>
         ) : null}
 
         {!fpl.loading && fpl.error ? (
-          <Stack spacing={3} align="center">
-            <Text color="slate.400">Team ID:</Text>
-            <Badge
-              borderRadius="xl"
-              px={6}
-              py={3}
-              fontSize="2xl"
-              fontFamily="mono"
-              textTransform="none"
-              bg="rgba(16, 185, 129, 0.12)"
-              color="brand.300"
-              borderWidth="1px"
-              borderColor="rgba(16, 185, 129, 0.22)"
-            >
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-slate-400">Team ID:</p>
+            <Badge className="rounded-2xl border border-[rgba(16,185,129,0.22)] bg-[rgba(16,185,129,0.12)] px-6 py-3 font-mono text-2xl normal-case text-emerald-300">
               {teamId}
             </Badge>
-            <Text fontSize="xs" color="yellow.300">
+            <p className="text-xs text-yellow-300">
               ⚠ Couldn't reach FPL API — {fpl.error}
-            </Text>
-          </Stack>
+            </p>
+          </div>
         ) : null}
-      </Stack>
-    </Center>
+      </div>
+    </div>
   );
 };
 

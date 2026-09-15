@@ -1,6 +1,5 @@
-import { Box, HStack, Stack, Text } from '@chakra-ui/react';
 import type { PlayerDetailHistory } from '../../hooks/usePlayerDetail';
-import { DashboardCard, DashboardHeader } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 type PlayerFormTrendProps = {
   history: PlayerDetailHistory[];
@@ -37,52 +36,43 @@ const PlayerFormTrend = ({ history, maxItems = DEFAULT_MAX_ITEMS }: PlayerFormTr
         description="Last up to 5 gameweeks by points (ordered oldest to latest)."
       />
 
-      <Stack spacing={3} px={5} py={4}>
+      <div className="flex flex-col gap-3 px-5 py-4">
         {trendRows.length === 0 ? (
-          <Text fontSize="sm" color="slate.400">
+          <p className="text-sm text-slate-400">
             No recent gameweek history is available for this player yet.
-          </Text>
+          </p>
         ) : (
           trendRows.map((row) => {
             const widthPercent = Math.max((Math.abs(row.points) / scaleBase) * 100, 6);
             const isPositive = row.points >= 0;
 
             return (
-              <Stack key={row.id} spacing={1.5}>
-                <HStack justify="space-between" align="center">
-                  <Text fontSize="sm" color="slate.300" fontWeight="semibold">
+              <div key={row.id} className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-slate-300">
                     {row.roundLabel}
-                  </Text>
-                  <Text
-                    fontSize="sm"
-                    fontWeight="bold"
-                    color={isPositive ? 'green.300' : 'red.300'}
+                  </span>
+                  <span
+                    className={`text-sm font-bold ${isPositive ? 'text-green-300' : 'text-red-300'}`}
                   >
                     {row.points} pts
-                  </Text>
-                </HStack>
-                <Box
-                  h="2.25rem"
-                  borderRadius="lg"
-                  bg="rgba(15, 23, 42, 0.72)"
-                  borderWidth="1px"
-                  borderColor="whiteAlpha.100"
-                  overflow="hidden"
-                >
-                  <Box
-                    h="100%"
-                    w={`${widthPercent}%`}
-                    bg={isPositive ? 'rgba(16, 185, 129, 0.42)' : 'rgba(248, 113, 113, 0.38)'}
-                    borderRightWidth="1px"
-                    borderRightColor={isPositive ? 'green.300' : 'red.300'}
-                    transition="width 0.2s ease"
+                  </span>
+                </div>
+                <div className="h-9 overflow-hidden rounded-lg border border-white/6 bg-[rgba(15,23,42,0.72)]">
+                  <div
+                    className={`h-full border-r transition-[width] duration-200 ease-[ease] ${
+                      isPositive
+                        ? 'border-r-green-300 bg-[rgba(16,185,129,0.42)]'
+                        : 'border-r-red-300 bg-[rgba(248,113,113,0.38)]'
+                    }`}
+                    style={{ width: `${widthPercent}%` }}
                   />
-                </Box>
-              </Stack>
+                </div>
+              </div>
             );
           })
         )}
-      </Stack>
+      </div>
     </DashboardCard>
   );
 };

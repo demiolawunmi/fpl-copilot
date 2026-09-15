@@ -1,5 +1,6 @@
-import { Button, Stack } from '@chakra-ui/react';
-import { DashboardCard, DashboardHeader } from '../ui/dashboard';
+import { Loader2 } from 'lucide-react';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
+import { Button } from '@/components/ui/button';
 
 interface Props {
   onAutoCaptain: () => void;
@@ -21,30 +22,32 @@ const QuickActions = ({
   return (
     <DashboardCard>
       <DashboardHeader title="Quick Actions" />
-      <Stack px={5} py={4} spacing={3}>
-        <Button onClick={onAutoCaptain} justifyContent="flex-start" variant="outline" borderColor="whiteAlpha.200" color="slate.200" _hover={{ bg: 'whiteAlpha.100', color: 'white' }}>
+      <div className="flex flex-col gap-3 px-5 py-4">
+        <Button onClick={onAutoCaptain} variant="outline" className="justify-start border-white/12 text-slate-200 hover:bg-white/6 hover:text-white">
           ⚡ Auto-pick Captain (Highest xPts)
         </Button>
-        <Button onClick={onAutoBench} justifyContent="flex-start" variant="outline" borderColor="whiteAlpha.200" color="slate.200" _hover={{ bg: 'whiteAlpha.100', color: 'white' }}>
+        <Button onClick={onAutoBench} variant="outline" className="justify-start border-white/12 text-slate-200 hover:bg-white/6 hover:text-white">
           🔄 Auto-pick Bench Order
         </Button>
         <Button
           onClick={onOpenOptimization}
-          isLoading={isOptimizationLoading}
-          isDisabled={isOptimizationLoading}
-          loadingText="Running optimization…"
-          justifyContent="flex-start"
+          disabled={isOptimizationLoading}
           variant="outline"
-          borderColor="rgba(59, 130, 246, 0.22)"
-          color="blue.300"
-          _hover={{ bg: 'rgba(59, 130, 246, 0.12)', color: 'blue.200' }}
+          className="justify-start border-[rgba(59,130,246,0.22)] text-blue-300 hover:bg-[rgba(59,130,246,0.12)] hover:text-blue-200"
         >
-          🧠 Run AIrsenal Optimization
+          {isOptimizationLoading ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              Running optimization…
+            </>
+          ) : (
+            '🧠 Run AIrsenal Optimization'
+          )}
         </Button>
-        <Button onClick={onRollTransfer} justifyContent="flex-start" variant="outline" borderColor="rgba(16, 185, 129, 0.22)" color="brand.400" _hover={{ bg: 'rgba(16, 185, 129, 0.12)', color: 'brand.300' }}>
+        <Button onClick={onRollTransfer} variant="outline" className="justify-start border-[rgba(16,185,129,0.22)] text-emerald-400 hover:bg-[rgba(16,185,129,0.12)] hover:text-emerald-300">
           💡 Explore Transfers (Go to Sandbox)
         </Button>
-      </Stack>
+      </div>
     </DashboardCard>
   );
 };

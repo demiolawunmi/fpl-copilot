@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Badge, Box, HStack, Stack, Text } from '@chakra-ui/react';
 import { getInjuryNews, type InjuryNewsPlayer } from '../../api/backend';
 import type { InjurySuspension } from '../../data/commandCenterMocks';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 interface Props {
   fallbackInjuries?: InjurySuspension[];
@@ -11,9 +10,9 @@ interface Props {
 const EMPTY_INJURIES: InjurySuspension[] = [];
 
 const statusStyle = (status: InjurySuspension['status']) => {
-  if (status === 'Injured') return { bg: 'rgba(248, 113, 113, 0.12)', color: 'red.300', borderColor: 'rgba(248, 113, 113, 0.22)' };
-  if (status === 'Suspended') return { bg: 'rgba(250, 204, 21, 0.12)', color: 'yellow.300', borderColor: 'rgba(250, 204, 21, 0.22)' };
-  return { bg: 'rgba(251, 146, 60, 0.12)', color: 'orange.300', borderColor: 'rgba(251, 146, 60, 0.22)' };
+  if (status === 'Injured') return { bg: 'rgba(248, 113, 113, 0.12)', color: '#fca5a5', borderColor: 'rgba(248, 113, 113, 0.22)' };
+  if (status === 'Suspended') return { bg: 'rgba(250, 204, 21, 0.12)', color: '#fde047', borderColor: 'rgba(250, 204, 21, 0.22)' };
+  return { bg: 'rgba(251, 146, 60, 0.12)', color: '#fdba74', borderColor: 'rgba(251, 146, 60, 0.22)' };
 };
 
 const suspensionKeywords = /(suspend|suspension|ban|banned|red card|accumulation)/i;
@@ -119,54 +118,53 @@ const InjuriesSuspensionsCard = ({ fallbackInjuries = EMPTY_INJURIES }: Props) =
   return (
     <DashboardCard>
       <DashboardHeader title="Injuries & Suspensions" />
-      <Stack px={5} py={4} spacing={3} maxH="20rem" overflowY="auto" sx={cardScrollSx}>
+      <div className="card-scroll flex max-h-80 flex-col gap-3 overflow-y-auto px-5 py-4">
         {loading ? (
-          <Text py={4} textAlign="center" fontSize="sm" color="slate.400">Loading...</Text>
+          <p className="py-4 text-center text-sm text-slate-400">Loading...</p>
         ) : error ? (
-          <Text py={4} textAlign="center" fontSize="sm" color="red.300">{error}</Text>
+          <p className="py-4 text-center text-sm text-red-300">{error}</p>
         ) : injuries.length === 0 ? (
-          <Text py={4} textAlign="center" fontSize="sm" color="slate.400">No injury or suspension news found</Text>
+          <p className="py-4 text-center text-sm text-slate-400">No injury or suspension news found</p>
         ) : (
           injuries.map((injury, idx) => {
             const palette = statusStyle(injury.status);
             return (
-              <Box key={`${injury.player}-${idx}`} pb={3} borderBottomWidth={idx === injuries.length - 1 ? '0' : '1px'} borderColor="whiteAlpha.100">
-                <HStack align="flex-start" justify="space-between" gap={2}>
-                  <Box flex="1" minW={0}>
-                    <Text noOfLines={1} fontSize="sm" fontWeight="semibold" color="white">
+              <div
+                key={`${injury.player}-${idx}`}
+                className={
+                  idx === injuries.length - 1
+                    ? 'pb-3'
+                    : 'border-b border-white/6 pb-3'
+                }
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-white">
                       {injury.player}
-                    </Text>
-                    <Text fontSize="xs" color="slate.400">
-                      {injury.team}
-                    </Text>
-                  </Box>
-                  <Badge
-                    flexShrink={0}
-                    px={2}
-                    py={1}
-                    fontSize="10px"
-                    textTransform="none"
-                    borderRadius="md"
-                    bg={palette.bg}
-                    color={palette.color}
-                    borderWidth="1px"
-                    borderColor={palette.borderColor}
+                    </p>
+                    <p className="text-xs text-slate-400">{injury.team}</p>
+                  </div>
+                  <span
+                    className="shrink-0 rounded-md border px-2 py-1 text-[10px] normal-case"
+                    style={{
+                      backgroundColor: palette.bg,
+                      color: palette.color,
+                      borderColor: palette.borderColor,
+                    }}
                   >
                     {injury.status}
-                  </Badge>
-                </HStack>
-                <Text mt={2} fontSize="xs" color="slate.300">
-                  {injury.details}
-                </Text>
-                <HStack mt={2} spacing={2}>
-                  <Text fontSize="xs" color="slate.500">Return:</Text>
-                  <Text fontSize="xs" fontWeight="medium" color="brand.400">{injury.expectedReturn}</Text>
-                </HStack>
-              </Box>
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-slate-300">{injury.details}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Return:</span>
+                  <span className="text-xs font-medium text-emerald-400">{injury.expectedReturn}</span>
+                </div>
+              </div>
             );
           })
         )}
-      </Stack>
+      </div>
     </DashboardCard>
   );
 };

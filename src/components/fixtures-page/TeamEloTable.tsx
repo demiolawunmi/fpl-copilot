@@ -1,15 +1,13 @@
+import type { TeamFixtureRatingsRow } from '../../types/fixturesRatings';
 import {
   Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Text,
-  Th,
-  Thead,
-  Tr,
-} from '@chakra-ui/react';
-import type { TeamFixtureRatingsRow } from '../../types/fixturesRatings';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 interface Props {
   teams: TeamFixtureRatingsRow[];
@@ -22,42 +20,22 @@ export default function TeamEloTable({ teams }: Props) {
         title="Team ratings"
         description="ClubElo from /api/fdr/elo; mean Copilot FDR across the matrix window from /api/fdr/team."
       />
-      <TableContainer overflow="auto" sx={cardScrollSx} maxH={{ base: '280px', md: 'none' }}>
-        <Table variant="simple" size="sm">
-          <Thead>
-            <Tr>
-              <Th
-                color="slate.500"
-                fontSize="xs"
-                fontWeight="semibold"
-                letterSpacing="wider"
-                textTransform="uppercase"
-              >
+      <div className="card-scroll max-h-[280px] overflow-auto md:max-h-none">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs font-semibold tracking-wider uppercase text-slate-500">
                 Team
-              </Th>
-              <Th
-                isNumeric
-                color="slate.500"
-                fontSize="xs"
-                fontWeight="semibold"
-                letterSpacing="wider"
-                textTransform="uppercase"
-              >
+              </TableHead>
+              <TableHead className="text-right text-xs font-semibold tracking-wider uppercase text-slate-500">
                 Elo
-              </Th>
-              <Th
-                isNumeric
-                color="slate.500"
-                fontSize="xs"
-                fontWeight="semibold"
-                letterSpacing="wider"
-                textTransform="uppercase"
-              >
+              </TableHead>
+              <TableHead className="text-right text-xs font-semibold tracking-wider uppercase text-slate-500">
                 Custom FDR (Elo)
-              </Th>
-            </Tr>
-          </Thead>
-          <Tbody>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {teams.map((row) => {
               const vals = row.eloBasedFdr.filter((x) => x != null) as number[];
               const fallbackAvg =
@@ -68,36 +46,30 @@ export default function TeamEloTable({ teams }: Props) {
                 row.eloFdrSummary != null ? row.eloFdrSummary : fallbackAvg;
 
               return (
-                <Tr key={row.shortName} _hover={{ bg: 'whiteAlpha.50' }}>
-                  <Td color="slate.200" fontWeight="medium">
+                <TableRow key={row.shortName} className="hover:bg-white/4">
+                  <TableCell className="font-medium text-slate-200">
                     {row.shortName}
-                  </Td>
-                  <Td
-                    isNumeric
-                    fontFamily="mono"
-                    color={row.elo == null ? 'slate.500' : 'white'}
+                  </TableCell>
+                  <TableCell
+                    className={`text-right font-mono ${row.elo == null ? 'text-slate-500' : 'text-white'}`}
                   >
                     {row.elo == null ? '—' : row.elo.toFixed(0)}
-                  </Td>
-                  <Td
-                    isNumeric
-                    fontFamily="mono"
-                    color={customDisplay == null ? 'slate.500' : 'slate.200'}
+                  </TableCell>
+                  <TableCell
+                    className={`text-right font-mono ${customDisplay == null ? 'text-slate-500' : 'text-slate-200'}`}
                   >
                     {customDisplay == null ? (
-                      <Text as="span" color="slate.500">
-                        —
-                      </Text>
+                      <span className="text-slate-500">—</span>
                     ) : (
                       customDisplay.toFixed(2)
                     )}
-                  </Td>
-                </Tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </Tbody>
+          </TableBody>
         </Table>
-      </TableContainer>
+      </div>
     </DashboardCard>
   );
 }

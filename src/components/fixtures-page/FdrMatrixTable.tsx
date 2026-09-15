@@ -1,23 +1,20 @@
-import {
-  Box,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Text,
-  Th,
-  Thead,
-  Tr,
-} from '@chakra-ui/react';
 import type { TeamFixtureRatingsRow } from '../../types/fixturesRatings';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 function cellBg(difficulty: number | null): string {
-  if (difficulty == null) return 'whiteAlpha.50';
+  if (difficulty == null) return 'bg-white/4';
   const tier = Math.round(difficulty);
-  if (tier <= 2) return 'rgba(16, 185, 129, 0.18)';
-  if (tier === 3) return 'rgba(234, 179, 8, 0.16)';
-  return 'rgba(244, 63, 94, 0.16)';
+  if (tier <= 2) return 'bg-[rgba(16,185,129,0.18)]';
+  if (tier === 3) return 'bg-[rgba(234,179,8,0.16)]';
+  return 'bg-[rgba(244,63,94,0.16)]';
 }
 
 function formatCellValue(d: number | null, mode: Mode): string {
@@ -52,100 +49,53 @@ export default function FdrMatrixTable({
         title={title}
         description={description}
       />
-      <TableContainer overflow="auto" sx={cardScrollSx}>
-        <Table variant="simple" size="sm" minW="max-content" sx={{ borderCollapse: 'separate', borderSpacing: 0 }}>
-          <Thead>
-            <Tr>
-              <Th
-                position="sticky"
-                left={0}
-                zIndex={2}
-                bg="slate.800"
-                px={3}
-                py={2.5}
-                color="slate.400"
-                fontSize="xs"
-                fontWeight="semibold"
-                letterSpacing="wider"
-                textTransform="uppercase"
-                borderBottomWidth="1px"
-                borderColor="whiteAlpha.100"
-              >
+      <div className="card-scroll overflow-auto">
+        <Table
+          className="min-w-max"
+          style={{ borderCollapse: 'separate', borderSpacing: 0 }}
+        >
+          <TableHeader>
+            <TableRow>
+              <TableHead className="sticky left-0 z-[2] border-b border-white/6 bg-slate-800 px-3 py-2.5 text-xs font-semibold tracking-wider uppercase text-slate-400">
                 Team
-              </Th>
+              </TableHead>
               {gameweekIds.map((gw) => (
-                <Th
+                <TableHead
                   key={gw}
-                  px={2}
-                  py={2.5}
-                  textAlign="center"
-                  color="slate.400"
-                  fontSize="xs"
-                  fontWeight="semibold"
-                  whiteSpace="nowrap"
-                  borderBottomWidth="1px"
-                  borderColor="whiteAlpha.100"
+                  className="border-b border-white/6 px-2 py-2.5 text-center text-xs font-semibold whitespace-nowrap text-slate-400"
                 >
                   GW {gw}
-                </Th>
+                </TableHead>
               ))}
-            </Tr>
-          </Thead>
-          <Tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {teams.map((row) => (
-              <Tr key={row.shortName} _hover={{ bg: 'whiteAlpha.30' }}>
-                <Td
-                  position="sticky"
-                  left={0}
-                  zIndex={1}
-                  bg="slate.900"
-                  px={3}
-                  py={2}
-                  borderBottomWidth="1px"
-                  borderColor="whiteAlpha.100"
-                  fontWeight="medium"
-                  color="slate.200"
-                  whiteSpace="nowrap"
-                >
+              <TableRow key={row.shortName}>
+                <TableCell className="sticky left-0 z-[1] border-b border-white/6 bg-slate-900 px-3 py-2 font-medium whitespace-nowrap text-slate-200">
                   {row.shortName}
-                </Td>
+                </TableCell>
                 {values(row).map((d, i) => (
-                  <Td
+                  <TableCell
                     key={`${row.shortName}-${gameweekIds[i]}`}
-                    px={1.5}
-                    py={1.5}
-                    textAlign="center"
-                    borderBottomWidth="1px"
-                    borderColor="whiteAlpha.100"
+                    className="border-b border-white/6 px-1.5 py-1.5 text-center"
                   >
-                    <Box
-                      display="inline-flex"
-                      alignItems="center"
-                      justifyContent="center"
-                      minW="32px"
-                      minH="28px"
-                      px={2}
-                      borderRadius="md"
-                      bg={cellBg(d)}
-                      borderWidth="1px"
-                      borderColor="whiteAlpha.100"
+                    <div
+                      className={`inline-flex min-h-[28px] min-w-[32px] items-center justify-center rounded-md border border-white/6 px-2 ${cellBg(d)}`}
                     >
-                      <Text
-                        as="span"
-                        fontWeight="bold"
-                        color={d == null ? 'slate.500' : 'white'}
-                        fontSize="xs"
+                      <span
+                        className={`text-xs font-bold ${d == null ? 'text-slate-500' : 'text-white'}`}
                       >
                         {formatCellValue(d, mode)}
-                      </Text>
-                    </Box>
-                  </Td>
+                      </span>
+                    </div>
+                  </TableCell>
                 ))}
-              </Tr>
+              </TableRow>
             ))}
-          </Tbody>
+          </TableBody>
         </Table>
-      </TableContainer>
+      </div>
     </DashboardCard>
   );
 }

@@ -1,19 +1,10 @@
 import { useState, useMemo } from 'react';
-import {
-  Avatar,
-  Badge,
-  Box,
-  Button,
-  Flex,
-  HStack,
-  IconButton,
-  Input,
-  Stack,
-  Tag,
-  Text,
-} from '@chakra-ui/react';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getDifficultyColor } from '../../utils/difficulty';
+import { getPlayerPhotoUrl } from '../../api/fpl/fpl';
 import type { EnhancedPlayer } from '../../data/commandCenterMocks';
 import type { PredictionPlayer, PlayerFixture } from '../../api/backend';
 
@@ -51,8 +42,14 @@ export interface CustomTransferBuilderProps {
 const ELEM_POS: Record<number, Position> = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' };
 const ALL_POSITIONS: Position[] = ['GK', 'DEF', 'MID', 'FWD'];
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const mkPhoto = (code: number) =>
-  `https://resources.premierleague.com/premierleague25/photos/players/110x140/${code}.png`;
+const mkPhoto = (code: number) => getPlayerPhotoUrl(code);
+const getInitials = (name: string) =>
+  name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
 function avgDiff5(fixtures: PlayerFixture['fixtures'] | undefined): number | null {
   if (!fixtures || fixtures.length === 0) return null;
@@ -106,36 +103,29 @@ function sortRows(rows: RowData[], key: SortKey, dir: SortDir): RowData[] {
 
 function DiffBadge({ value }: { value: number | null }) {
   if (value == null) {
-    return <Text fontSize="10px" color="slate.600" minW="30px" textAlign="center">–</Text>;
+    return <span className="min-w-[30px] text-center text-[10px] text-slate-600">–</span>;
   }
   const colorName = getDifficultyColor(Math.round(value));
-  const styles: Record<string, { bg: string; color: string }> = {
-    emerald: { bg: 'rgba(16, 185, 129, 0.2)', color: 'green.300' },
-    yellow: { bg: 'rgba(250, 204, 21, 0.2)', color: 'yellow.300' },
-    rose: { bg: 'rgba(244, 63, 94, 0.2)', color: 'red.300' },
+  const styles: Record<string, string> = {
+    emerald: 'bg-[rgba(16,185,129,0.2)] text-green-300',
+    yellow: 'bg-[rgba(250,204,21,0.2)] text-yellow-300',
+    rose: 'bg-[rgba(244,63,94,0.2)] text-red-300',
   };
   const s = styles[colorName] ?? styles.yellow;
   return (
-    <Tag
-      size="sm"
-      bg={s.bg}
-      color={s.color}
-      borderRadius="full"
-      fontWeight="bold"
-      fontSize="10px"
-      minW="30px"
-      justifyContent="center"
+    <span
+      className={`inline-flex min-w-[30px] items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold ${s}`}
     >
       {value.toFixed(1)}
-    </Tag>
+    </span>
   );
 }
 
 const POS_COLORS: Record<Position, string> = {
-  GK: 'yellow',
-  DEF: 'green',
-  MID: 'blue',
-  FWD: 'red',
+  GK: 'bg-yellow-500/20 text-yellow-300',
+  DEF: 'bg-green-500/20 text-green-300',
+  MID: 'bg-blue-500/20 text-blue-300',
+  FWD: 'bg-red-500/20 text-red-300',
 };
 
 function PlayerRow({
@@ -151,85 +141,67 @@ function PlayerRow({
   onAction?: () => void;
   onRowClick?: () => void;
 }) {
+  const formColor =
+    player.form <= 0 ? 'text-slate-600'
+      : player.form >= 6 ? 'text-green-300'
+      : player.form >= 3 ? 'text-orange-300'
+      : 'text-red-300';
   return (
-    <Flex
-      align="center"
-      gap={2}
-      py={2}
-      px={3}
-      cursor={onRowClick ? 'pointer' : undefined}
+    <div
+      className={`flex items-center gap-2 rounded-md px-3 py-2 transition-colors duration-150 ${onRowClick ? 'cursor-pointer hover:bg-white/4' : ''}`}
       onClick={onRowClick}
-      bg="transparent"
-      borderRadius="md"
-      _hover={onRowClick ? { bg: 'whiteAlpha.50' } : undefined}
-      transition="background 0.15s"
     >
-      <Avatar
-        size="sm"
-        name={player.name}
-        src={player.photoUrl}
-        bg="slate.700"
-        color="slate.300"
-      />
+      <Avatar size="sm">
+        {player.photoUrl ? <AvatarImage src={player.photoUrl} alt={player.name} /> : null}
+        <AvatarFallback className="bg-slate-700 text-slate-300">{getInitials(player.name)}</AvatarFallback>
+      </Avatar>
 
       {/* Name + meta subtitle */}
-      <Box flex="1" minW={0}>
-        <HStack spacing={1.5} mb={0.5}>
-          <Text noOfLines={1} fontSize="sm" fontWeight="semibold" color="white">
+      <div className="min-w-0 flex-1">
+        <div className="mb-0.5 flex items-center gap-1.5">
+          <span className="truncate text-sm font-semibold text-white">
             {player.name}
-          </Text>
-          <Badge
-            fontSize="9px"
-            px={1}
-            borderRadius="sm"
-            colorScheme={POS_COLORS[player.position]}
-            variant="subtle"
-          >
+          </span>
+          <Badge className={`rounded-xs px-1 text-[9px] ${POS_COLORS[player.position]}`}>
             {player.position}
           </Badge>
           {player.isBench && (
-            <Badge fontSize="9px" px={1} borderRadius="sm" colorScheme="gray" variant="outline">
+            <Badge variant="outline" className="rounded-xs border-gray-500/40 px-1 text-[9px] text-gray-300">
               BENCH
             </Badge>
           )}
-        </HStack>
-        <HStack spacing={1} divider={<Text color="slate.700" fontSize="9px">·</Text>}>
-          <Text fontSize="xs" color="slate.400">{player.teamAbbr}</Text>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-slate-400">{player.teamAbbr}</span>
           {player.price > 0 && (
-            <Text fontSize="xs" color="slate.400">£{player.price.toFixed(1)}m</Text>
+            <>
+              <span className="text-[9px] text-slate-700">·</span>
+              <span className="text-xs text-slate-400">£{player.price.toFixed(1)}m</span>
+            </>
           )}
           {player.nextFixture && (
-            <Text fontSize="xs" color="slate.500">{player.nextFixture}</Text>
+            <>
+              <span className="text-[9px] text-slate-700">·</span>
+              <span className="text-xs text-slate-500">{player.nextFixture}</span>
+            </>
           )}
-        </HStack>
-      </Box>
+        </div>
+      </div>
 
       {/* Form — color-coded: green ≥ 6, orange 3–5.9, red < 3 */}
-      <Text
-        fontSize="xs"
-        fontWeight="bold"
-        color={
-          player.form <= 0 ? 'slate.600'
-            : player.form >= 6 ? 'green.300'
-            : player.form >= 3 ? 'orange.300'
-            : 'red.300'
-        }
-        minW="28px"
-        textAlign="right"
-        flexShrink={0}
-      >
+      <span className={`min-w-[28px] shrink-0 text-right text-xs font-bold ${formColor}`}>
         {player.form > 0 ? player.form.toFixed(1) : '–'}
-      </Text>
+      </span>
 
       {/* xP */}
-      <Text fontSize="sm" fontWeight="bold" color="blue.300" minW="32px" textAlign="right" flexShrink={0}>
+      <span className="min-w-[32px] shrink-0 text-right text-sm font-bold text-blue-300">
         {player.xPts > 0 ? player.xPts.toFixed(1) : '–'}
-      </Text>
+      </span>
 
       {/* Sel% */}
-      <Text fontSize="xs" fontWeight="medium" color="slate.400" minW="34px" textAlign="right" flexShrink={0}>
+      <span className="min-w-[34px] shrink-0 text-right text-xs font-medium text-slate-400">
         {player.ownership > 0 ? `${player.ownership.toFixed(1)}%` : '–'}
-      </Text>
+      </span>
 
       {/* FDR */}
       <DiffBadge value={player.avgDiff} />
@@ -237,24 +209,27 @@ function PlayerRow({
       {/* Action */}
       {actionLabel && onAction ? (
         <Button
-          size="xs"
           variant={actionLabel === 'In' ? 'solid' : 'outline'}
-          colorScheme={actionColor}
           onClick={(e) => {
             e.stopPropagation();
             onAction();
           }}
-          fontSize="10px"
-          h="24px"
-          px={2.5}
-          minW="40px"
+          className={`h-6 min-w-[40px] rounded-md px-2.5 text-[10px] ${
+            actionColor === 'green'
+              ? actionLabel === 'In'
+                ? 'bg-green-500 text-white hover:bg-green-600'
+                : 'border-green-500/40 text-green-300 hover:bg-green-500/10'
+              : actionLabel === 'In'
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'border-red-500/40 text-red-300 hover:bg-red-500/10'
+          }`}
         >
           {actionLabel}
         </Button>
       ) : (
-        <Box w="40px" />
+        <div className="w-[40px]" />
       )}
-    </Flex>
+    </div>
   );
 }
 
@@ -272,24 +247,18 @@ function SortChip({
   onClick: () => void;
 }) {
   return (
-    <IconButton
+    <Button
       aria-label={`Sort by ${label}`}
-      size="xs"
       variant={active ? 'solid' : 'ghost'}
-      colorScheme={active ? 'blue' : 'gray'}
-      color={active ? undefined : 'slate.500'}
       onClick={onClick}
-      h="22px"
-      px={2}
-      minW="auto"
-      fontSize="10px"
-      fontWeight={active ? 'bold' : 'medium'}
-      icon={
-        <Text as="span" fontSize="10px">
-          {label} {active ? (dir === 'desc' ? '↓' : '↑') : ''}
-        </Text>
-      }
-    />
+      className={`h-[22px] min-w-0 rounded-md px-2 text-[10px] ${
+        active ? 'bg-blue-500 font-bold text-white hover:bg-blue-600' : 'font-medium text-slate-500'
+      }`}
+    >
+      <span className="text-[10px]">
+        {label} {active ? (dir === 'desc' ? '↓' : '↑') : ''}
+      </span>
+    </Button>
   );
 }
 
@@ -427,11 +396,11 @@ const CustomTransferBuilder = ({
     return (
       <DashboardCard>
         <DashboardHeader title="Custom Transfer Builder" />
-        <Box px={5} py={6}>
-          <Text textAlign="center" color="slate.500" fontSize="sm">
+        <div className="px-5 py-6">
+          <p className="text-center text-sm text-slate-500">
             Loading player data…
-          </Text>
-        </Box>
+          </p>
+        </div>
       </DashboardCard>
     );
   }
@@ -445,101 +414,88 @@ const CustomTransferBuilder = ({
 
       {/* ─── Step indicator ─── */}
       {!selectedOut ? (
-        <Box px={4} py={2} bg="rgba(59, 130, 246, 0.06)" borderBottomWidth="1px" borderColor="whiteAlpha.100">
-          <Text fontSize="xs" color="blue.300" fontWeight="semibold">
+        <div className="border-b border-white/6 bg-[rgba(59,130,246,0.06)] px-4 py-2">
+          <p className="text-xs font-semibold text-blue-300">
             Step 1 of 2 — Pick a player from your squad to transfer out
-          </Text>
-          <Text fontSize="11px" color="slate.500">
+          </p>
+          <p className="text-[11px] text-slate-500">
             Tap a player row or press the red "Out" button
-          </Text>
-        </Box>
+          </p>
+        </div>
       ) : (
-        <Stack spacing={0}>
-          <Flex
-            align="center"
-            gap={2}
-            px={4}
-            py={2}
-            bg="rgba(244, 63, 94, 0.08)"
-            borderBottomWidth="1px"
-            borderColor="whiteAlpha.100"
-          >
-            <Avatar size="sm" name={selectedOut.name} src={selectedOut.photoUrl} bg="slate.700" />
-            <Box flex="1" minW={0}>
-              <Text fontSize="10px" color="slate.500">Removing from squad</Text>
-              <Text fontSize="sm" fontWeight="bold" color="red.300" noOfLines={1}>
+        <div>
+          <div className="flex items-center gap-2 border-b border-white/6 bg-[rgba(244,63,94,0.08)] px-4 py-2">
+            <Avatar size="sm">
+              {selectedOut.photoUrl ? <AvatarImage src={selectedOut.photoUrl} alt={selectedOut.name} /> : null}
+              <AvatarFallback className="bg-slate-700">{getInitials(selectedOut.name)}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] text-slate-500">Removing from squad</p>
+              <p className="truncate text-sm font-bold text-red-300">
                 {selectedOut.name}
-                <Text as="span" fontSize="xs" fontWeight="normal" color="slate.500">
+                <span className="text-xs font-normal text-slate-500">
                   {' '}({selectedOut.position} · {selectedOut.teamAbbr})
-                </Text>
-              </Text>
-            </Box>
-            <Button size="xs" variant="outline" colorScheme="gray" onClick={handleCancel}>
+                </span>
+              </p>
+            </div>
+            <Button variant="outline" onClick={handleCancel} className="h-6 rounded-md px-2 text-xs text-slate-300">
               Cancel
             </Button>
-          </Flex>
+          </div>
 
-          <Box px={4} py={2} bg="rgba(16, 185, 129, 0.06)" borderBottomWidth="1px" borderColor="whiteAlpha.100">
-            <Text fontSize="xs" color="green.300" fontWeight="semibold">
+          <div className="border-b border-white/6 bg-[rgba(16,185,129,0.06)] px-4 py-2">
+            <p className="text-xs font-semibold text-green-300">
               Step 2 of 2 — Pick a replacement ({selectedOut.position})
-            </Text>
-            <Text fontSize="11px" color="slate.500">
+            </p>
+            <p className="text-[11px] text-slate-500">
               Tap a player or press the green "In" button — the transfer updates your sandbox pitch
-            </Text>
-          </Box>
-        </Stack>
+            </p>
+          </div>
+        </div>
       )}
 
-      <Stack spacing={0}>
+      <div>
         {/* Position filter + search */}
-        <Stack spacing={2} px={4} py={3}>
-          <HStack spacing={1} flexWrap="wrap">
+        <div className="flex flex-col gap-2 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-1">
             <Button
-              size="xs"
               variant={effectivePos == null ? 'solid' : 'ghost'}
-              colorScheme={effectivePos == null ? 'blue' : 'gray'}
-              color={effectivePos == null ? undefined : 'slate.400'}
               onClick={() => setPosFilter(null)}
-              isDisabled={selectedOut != null}
-              fontSize="10px"
-              h="24px"
+              disabled={selectedOut != null}
+              className={`h-6 rounded-md px-2 text-[10px] ${
+                effectivePos == null ? 'bg-blue-500 text-white hover:bg-blue-600' : 'text-slate-400'
+              }`}
             >
               ALL
             </Button>
             {ALL_POSITIONS.map((pos) => (
               <Button
                 key={pos}
-                size="xs"
                 variant={effectivePos === pos ? 'solid' : 'ghost'}
-                colorScheme={effectivePos === pos ? 'blue' : 'gray'}
-                color={effectivePos === pos ? undefined : 'slate.400'}
                 onClick={() => setPosFilter(pos)}
-                isDisabled={selectedOut != null}
-                fontSize="10px"
-                h="24px"
+                disabled={selectedOut != null}
+                className={`h-6 rounded-md px-2 text-[10px] ${
+                  effectivePos === pos ? 'bg-blue-500 text-white hover:bg-blue-600' : 'text-slate-400'
+                }`}
               >
                 {pos}
               </Button>
             ))}
-          </HStack>
+          </div>
 
-          <Input
+          <input
             placeholder="Search by name or team…"
-            size="sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            bg="whiteAlpha.50"
-            borderColor="whiteAlpha.200"
-            color="white"
-            _placeholder={{ color: 'slate.500' }}
+            className="h-8 w-full rounded-md border border-white/8 bg-white/4 px-3 text-sm text-white placeholder:text-slate-500 focus-visible:border-emerald-400 focus-visible:outline-none"
           />
-        </Stack>
+        </div>
 
         {/* Sort controls */}
-        <Flex px={4} pb={2} gap={1} align="center" flexWrap="wrap">
-          <Text fontSize="9px" color="slate.600" textTransform="uppercase" mr={1}>
+        <div className="flex flex-wrap items-center gap-1 px-4 pb-2">
+          <span className="mr-1 text-[9px] uppercase text-slate-600">
             Sort
-          </Text>
+          </span>
           {SORT_OPTIONS.map((opt) => (
             <SortChip
               key={opt.key}
@@ -549,46 +505,37 @@ const CustomTransferBuilder = ({
               onClick={() => handleSortToggle(opt.key)}
             />
           ))}
-        </Flex>
+        </div>
 
         {/* Column headers */}
-        <Flex px={4} py={1} gap={2} align="center">
-          <Box w="32px" />
-          <Text flex="1" fontSize="9px" color="slate.600" textTransform="uppercase" letterSpacing="wider">
+        <div className="flex items-center gap-2 px-4 py-1">
+          <div className="w-[32px]" />
+          <span className="flex-1 text-[9px] uppercase tracking-wide text-slate-600">
             Player
-          </Text>
-          <Text fontSize="9px" color="slate.600" textTransform="uppercase" minW="28px" textAlign="right">
+          </span>
+          <span className="min-w-[28px] text-right text-[9px] uppercase text-slate-600">
             Form
-          </Text>
-          <Text fontSize="9px" color="slate.600" textTransform="uppercase" minW="32px" textAlign="right">
+          </span>
+          <span className="min-w-[32px] text-right text-[9px] uppercase text-slate-600">
             xP
-          </Text>
-          <Text fontSize="9px" color="slate.600" textTransform="uppercase" minW="34px" textAlign="right">
+          </span>
+          <span className="min-w-[34px] text-right text-[9px] uppercase text-slate-600">
             Sel%
-          </Text>
-          <Text fontSize="9px" color="slate.600" textTransform="uppercase" minW="30px" textAlign="center">
+          </span>
+          <span className="min-w-[30px] text-center text-[9px] uppercase text-slate-600">
             FDR
-          </Text>
-          <Box w="40px" />
-        </Flex>
+          </span>
+          <div className="w-[40px]" />
+        </div>
 
         {/* Scrollable list */}
-        <Box maxH="520px" overflowY="auto" sx={cardScrollSx} pb={2}>
+        <div className="card-scroll max-h-[520px] overflow-y-auto pb-2">
           {/* Your Squad (shown in step 1) */}
           {!selectedOut && filteredSquad.length > 0 && (
             <>
-              <Text
-                px={4}
-                pt={2}
-                pb={1}
-                fontSize="10px"
-                fontWeight="bold"
-                color="slate.500"
-                textTransform="uppercase"
-                letterSpacing="widest"
-              >
+              <p className="px-4 pb-1 pt-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                 Your Squad ({filteredSquad.length})
-              </Text>
+              </p>
               {filteredSquad.map((p) => (
                 <PlayerRow
                   key={p.id}
@@ -603,20 +550,11 @@ const CustomTransferBuilder = ({
           )}
 
           {/* Available Players */}
-          <Text
-            px={4}
-            pt={3}
-            pb={1}
-            fontSize="10px"
-            fontWeight="bold"
-            color="slate.500"
-            textTransform="uppercase"
-            letterSpacing="widest"
-          >
+          <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-slate-500">
             {selectedOut
               ? `Available ${selectedOut.position}s (${filteredAvailable.length})`
               : `All Players (${filteredAvailable.length})`}
-          </Text>
+          </p>
           {filteredAvailable.length > 0 ? (
             filteredAvailable.map((p) => (
               <PlayerRow
@@ -629,12 +567,12 @@ const CustomTransferBuilder = ({
               />
             ))
           ) : (
-            <Text px={4} py={4} fontSize="sm" color="slate.600" textAlign="center">
+            <p className="px-4 py-4 text-center text-sm text-slate-600">
               No players match your filters
-            </Text>
+            </p>
           )}
-        </Box>
-      </Stack>
+        </div>
+      </div>
     </DashboardCard>
   );
 };

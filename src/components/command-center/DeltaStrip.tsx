@@ -1,6 +1,6 @@
-import { Badge, HStack, Text, Wrap, WrapItem } from '@chakra-ui/react';
 import type { EnhancedPlayer } from '../../data/commandCenterMocks';
-import { DashboardCard } from '../ui/dashboard';
+import { DashboardCard } from '@/components/ui/primitives';
+import { Badge } from '@/components/ui/badge';
 
 interface Props {
   realSquad: EnhancedPlayer[];
@@ -26,94 +26,94 @@ const DeltaStrip = ({ realSquad, sandboxSquad, bank, bankDelta, freeTransfers, s
   const extraTransfers = Math.max(0, sandboxTransfersMade - freeTransfers);
   const hitCost = extraTransfers * 4;
 
-  const deltaColor = (value: number) => (value > 0 ? 'brand.400' : value < 0 ? 'red.300' : 'slate.400');
+  const deltaColor = (value: number) => (value > 0 ? 'text-emerald-400' : value < 0 ? 'text-red-300' : 'text-slate-400');
 
   return (
-    <DashboardCard px={5} py={4}>
-      <Wrap spacing={6} align="center">
-        <WrapItem>
-          <HStack spacing={2}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">
+    <DashboardCard className="px-5 py-4">
+      <div className="flex flex-wrap items-center gap-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">
               GW xPts
-            </Text>
-            <Text fontSize="sm" color="slate.400">
+            </span>
+            <span className="text-sm text-slate-400">
               {realXPts.toFixed(1)}
-            </Text>
-            <Text color="slate.600">→</Text>
-            <Text fontSize="sm" fontWeight="bold" color="white">
+            </span>
+            <span className="text-slate-600">→</span>
+            <span className="text-sm font-bold text-white">
               {sandboxXPts.toFixed(1)}
-            </Text>
+            </span>
             {Math.abs(xPtsDelta) > 0.01 ? (
-              <Text fontSize="xs" fontWeight="bold" color={deltaColor(xPtsDelta)}>
+              <span className={`text-xs font-bold ${deltaColor(xPtsDelta)}`}>
                 {xPtsDelta > 0 ? '+' : ''}
                 {xPtsDelta.toFixed(1)}
-              </Text>
+              </span>
             ) : null}
-          </HStack>
-        </WrapItem>
+          </div>
+        </div>
 
-        <WrapItem>
-          <HStack spacing={2}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">
               Next 5 GWs
-            </Text>
-            <Text fontSize="sm" color="slate.400">
+            </span>
+            <span className="text-sm text-slate-400">
               {realNext5.toFixed(1)}
-            </Text>
-            <Text color="slate.600">→</Text>
-            <Text fontSize="sm" fontWeight="bold" color="white">
+            </span>
+            <span className="text-slate-600">→</span>
+            <span className="text-sm font-bold text-white">
               {sandboxNext5.toFixed(1)}
-            </Text>
+            </span>
             {Math.abs(next5Delta) > 0.01 ? (
-              <Text fontSize="xs" fontWeight="bold" color={deltaColor(next5Delta)}>
+              <span className={`text-xs font-bold ${deltaColor(next5Delta)}`}>
                 {next5Delta > 0 ? '+' : ''}
                 {next5Delta.toFixed(1)}
-              </Text>
+              </span>
             ) : null}
-          </HStack>
-        </WrapItem>
+          </div>
+        </div>
 
-        <WrapItem>
-          <HStack spacing={2}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">
               Bank
-            </Text>
-            <Text fontSize="sm" fontWeight="bold" color={currentBank < 0 ? 'red.300' : 'brand.400'}>
+            </span>
+            <span className={`text-sm font-bold ${currentBank < 0 ? 'text-red-300' : 'text-emerald-400'}`}>
               £{currentBank.toFixed(1)}m
               {Math.abs(bankDelta) > 0.001 ? (
-                <Text as="span" fontSize="xs" ml={1} color={deltaColor(bankDelta)}>
+                <span className={`ml-1 text-xs ${deltaColor(bankDelta)}`}>
                   ({bankDelta > 0 ? '+' : ''}
                   {bankDelta.toFixed(1)}m)
-                </Text>
+                </span>
               ) : null}
-            </Text>
-          </HStack>
-        </WrapItem>
+            </span>
+          </div>
+        </div>
 
-        <WrapItem>
-          <HStack spacing={2}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">
               Transfers
-            </Text>
-            <Text fontSize="sm" fontWeight="bold" color={sandboxTransfersMade > freeTransfers ? 'red.300' : 'brand.400'}>
+            </span>
+            <span className={`text-sm font-bold ${sandboxTransfersMade > freeTransfers ? 'text-red-300' : 'text-emerald-400'}`}>
               {sandboxTransfersMade}/{freeTransfers}
-            </Text>
+            </span>
             {hitCost > 0 && (
-              <Badge colorScheme="red" fontSize="10px" px={2} py={0.5} borderRadius="md">
+              <Badge className="rounded-md bg-red-500/20 px-2 py-0.5 text-[10px] text-red-300">
                 −{hitCost} pts hit
               </Badge>
             )}
-          </HStack>
-        </WrapItem>
+          </div>
+        </div>
 
         {!hasChanges ? (
-          <WrapItem ms={{ base: 0, xl: 'auto' }}>
-            <Text fontSize="xs" color="slate.500" fontStyle="italic">
+          <div className="ms-0 xl:ms-auto">
+            <span className="text-xs italic text-slate-500">
               No changes yet
-            </Text>
-          </WrapItem>
+            </span>
+          </div>
         ) : null}
-      </Wrap>
+      </div>
     </DashboardCard>
   );
 };

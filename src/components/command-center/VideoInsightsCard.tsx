@@ -1,6 +1,5 @@
-import { Box, HStack, Stack, Text } from '@chakra-ui/react';
 import type { VideoInsight } from '../../data/commandCenterMocks';
-import { DashboardCard, DashboardHeader, cardScrollSx } from '../ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
 
 interface Props {
   videos: VideoInsight[];
@@ -10,27 +9,37 @@ const VideoInsightsCard = ({ videos }: Props) => {
   return (
     <DashboardCard>
       <DashboardHeader title="Gameweek Videos" description="Curated FPL content" />
-      <Stack px={5} py={4} spacing={3} maxH="20rem" overflowY="auto" sx={cardScrollSx}>
+      <div className="card-scroll flex max-h-80 flex-col gap-3 overflow-y-auto px-5 py-4">
         {videos.map((video, idx) => (
-          <Box key={video.id} pb={3} borderBottomWidth={idx === videos.length - 1 ? '0' : '1px'} borderColor="whiteAlpha.100">
-            <Text fontSize="sm" fontWeight="semibold" color="white">{video.title}</Text>
-            <HStack mt={2} spacing={2} fontSize="xs" color="slate.400">
-              <Text>{video.source}</Text>
-              <Text>•</Text>
-              <Text>{video.duration}</Text>
-            </HStack>
-            <HStack mt={2} spacing={1.5} flexWrap="wrap">
+          <div
+            key={video.id}
+            className={cnBorder(idx === videos.length - 1)}
+          >
+            <p className="text-sm font-semibold text-white">{video.title}</p>
+            <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
+              <span>{video.source}</span>
+              <span>•</span>
+              <span>{video.duration}</span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {video.tags.map((tag) => (
-                <Box key={tag} px={2} py={0.5} fontSize="10px" fontWeight="medium" borderRadius="md" borderWidth="1px" borderColor="whiteAlpha.200" bg="whiteAlpha.100" color="slate.300">
+                <span
+                  key={tag}
+                  className="rounded-md border border-white/8 bg-white/6 px-2 py-0.5 text-[10px] font-medium text-slate-300"
+                >
                   {tag}
-                </Box>
+                </span>
               ))}
-            </HStack>
-          </Box>
+            </div>
+          </div>
         ))}
-      </Stack>
+      </div>
     </DashboardCard>
   );
 };
+
+function cnBorder(isLast: boolean): string {
+  return isLast ? 'pb-3' : 'border-b border-white/6 pb-3';
+}
 
 export default VideoInsightsCard;

@@ -1,21 +1,16 @@
 import {
-  Badge,
-  Box,
-  Button,
-  HStack,
   Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Text,
-  Th,
-  Thead,
-  Tr,
-} from '@chakra-ui/react';
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { buttonVariants } from '@/components/ui/button';
 import { useMemo, useState } from 'react';
 import type { PlayerStatsColumnKey } from './PlayerStatsFilters';
 import type { PlayerStatsFixturePill, PlayerStatsRowModel } from '../../utils/playerStatsModel';
-import { cardScrollSx } from '../ui/dashboard';
+import { cn } from '@/lib/utils';
 
 type SortDirection = 'asc' | 'desc';
 
@@ -114,23 +109,19 @@ const PlayerStatsTable = ({
   const endIndex = sortedRows.length === 0 ? 0 : Math.min(normalizedPage * normalizedPageSize, sortedRows.length);
 
   return (
-    <Box>
-      <TableContainer overflowX="auto" sx={cardScrollSx}>
-        <Table variant="simple" size="sm" minW="max-content" sx={{ borderCollapse: 'separate', borderSpacing: 0 }}>
-          <Thead>
-            <Tr>
+    <div>
+      <div className="card-scroll overflow-x-auto">
+        <Table className="min-w-max border-collapse border-spacing-0">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
               {normalizedVisibleColumns.map((column) => {
                 const sortable = SORTABLE_COLUMNS.has(column as SortableColumnKey);
                 const isSorted = sortable && sort.key === column;
 
                 return (
-                  <Th
+                  <TableHead
                     key={column}
-                    position="sticky"
-                    top={0}
-                    zIndex={1}
-                    bg="slate.900"
-                    whiteSpace="nowrap"
+                    className="sticky top-0 z-[1] bg-slate-900 whitespace-nowrap"
                     aria-sort={
                       sortable
                         ? isSorted
@@ -142,70 +133,50 @@ const PlayerStatsTable = ({
                     }
                   >
                     {sortable ? (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        p={0}
-                        minW="auto"
-                        h="auto"
-                        color="slate.300"
-                        _hover={{ bg: 'whiteAlpha.200' }}
+                      <button
+                        type="button"
                         onClick={() => setSort((current) => nextSortState(current, column as SortableColumnKey))}
                         aria-label={`Sort by ${COLUMN_LABELS[column]}`}
+                        className="flex cursor-pointer items-center gap-1 p-0 hover:bg-white/8"
                       >
-                        <HStack spacing={1}>
-                          <Text as="span" fontSize="xs" textTransform="uppercase" letterSpacing="wider">
-                            {COLUMN_LABELS[column]}
-                          </Text>
-                          <Text as="span" fontSize="xs" color={isSorted ? 'brand.300' : 'slate.500'}>
-                            {isSorted ? (sort.direction === 'asc' ? '▲' : '▼') : '↕'}
-                          </Text>
-                        </HStack>
-                      </Button>
+                        <span className="text-xs uppercase tracking-wide">
+                          {COLUMN_LABELS[column]}
+                        </span>
+                        <span className={cn('text-xs', isSorted ? 'text-emerald-300' : 'text-slate-500')}>
+                          {isSorted ? (sort.direction === 'asc' ? '▲' : '▼') : '↕'}
+                        </span>
+                      </button>
                     ) : (
-                      <Text as="span" fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="slate.300">
+                      <span className="text-xs uppercase tracking-wide text-slate-300">
                         {COLUMN_LABELS[column]}
-                      </Text>
+                      </span>
                     )}
-                  </Th>
+                  </TableHead>
                 );
               })}
               {onViewClick ? (
-                <Th
-                  position="sticky"
-                  top={0}
-                  zIndex={1}
-                  bg="slate.900"
-                  textAlign="right"
-                  whiteSpace="nowrap"
-                >
-                  <Text as="span" fontSize="xs" textTransform="uppercase" letterSpacing="wider" color="slate.300">
-                    Action
-                  </Text>
-                </Th>
+                <TableHead className="sticky top-0 z-[1] bg-slate-900 text-right whitespace-nowrap">
+                  <span className="text-xs uppercase tracking-wide text-slate-300">Action</span>
+                </TableHead>
               ) : null}
-            </Tr>
-          </Thead>
+            </TableRow>
+          </TableHeader>
 
-          <Tbody>
+          <TableBody>
             {isLoading ? (
-              <Tr>
-                <Td colSpan={normalizedVisibleColumns.length + (onViewClick ? 1 : 0)} py={6}>
-                  <Text color="slate.400" textAlign="center">
-                    Loading player statistics...
-                  </Text>
-                </Td>
-              </Tr>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={normalizedVisibleColumns.length + (onViewClick ? 1 : 0)} className="py-6 text-center text-slate-400">
+                  Loading player statistics...
+                </TableCell>
+              </TableRow>
             ) : null}
 
             {!isLoading && pageRows.length === 0 ? (
-              <Tr>
-                <Td colSpan={normalizedVisibleColumns.length + (onViewClick ? 1 : 0)} py={6}>
-                  <Text color="slate.400" textAlign="center">
-                    {emptyText}
-                  </Text>
-                </Td>
-              </Tr>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={normalizedVisibleColumns.length + (onViewClick ? 1 : 0)} className="py-6 text-center text-slate-400">
+                  {emptyText}
+                </TableCell>
+              </TableRow>
             ) : null}
 
             {!isLoading
@@ -214,14 +185,15 @@ const PlayerStatsTable = ({
                   const isSelected = selectedRowId != null && selectedRowId === row.id;
 
                   return (
-                    <Tr
+                    <TableRow
                       key={row.id}
                       tabIndex={isClickable ? 0 : -1}
                       role={isClickable ? 'button' : undefined}
-                      cursor={isClickable ? 'pointer' : undefined}
-                      bg={isSelected ? 'rgba(56, 189, 248, 0.12)' : undefined}
-                      _hover={{ bg: 'whiteAlpha.100' }}
-                      _focusVisible={{ outline: '2px solid', outlineColor: 'brand.300', outlineOffset: '-2px' }}
+                      className={cn(
+                        'hover:bg-white/6 focus-visible:outline-2 focus-visible:outline-emerald-300 focus-visible:-outline-offset-2',
+                        isClickable && 'cursor-pointer',
+                        isSelected && 'bg-[rgba(56,189,248,0.12)] hover:bg-[rgba(56,189,248,0.12)]',
+                      )}
                       onClick={() => onRowSelect?.(row.id)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') {
@@ -231,15 +203,15 @@ const PlayerStatsTable = ({
                       }}
                     >
                       {normalizedVisibleColumns.map((column) => (
-                        <Td key={`${row.id}-${column}`} whiteSpace="nowrap">
+                        <TableCell key={`${row.id}-${column}`}>
                           {renderCell(row, column)}
-                        </Td>
+                        </TableCell>
                       ))}
                       {onViewClick ? (
-                        <Td textAlign="right" whiteSpace="nowrap">
-                          <Button
-                            size="xs"
-                            variant="outline"
+                        <TableCell className="text-right">
+                          <button
+                            type="button"
+                            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'h-6 px-2 text-xs')}
                             onClick={(event) => {
                               event.stopPropagation();
                               onViewClick(row.id);
@@ -247,44 +219,44 @@ const PlayerStatsTable = ({
                             aria-label={`View ${row.name}`}
                           >
                             View
-                          </Button>
-                        </Td>
+                          </button>
+                        </TableCell>
                       ) : null}
-                    </Tr>
+                    </TableRow>
                   );
                 })
               : null}
-          </Tbody>
+          </TableBody>
         </Table>
-      </TableContainer>
+      </div>
 
-      <HStack justify="space-between" mt={4} spacing={4} flexWrap="wrap">
-        <Text fontSize="sm" color="slate.400">
+      <div className="mt-4 flex flex-wrap justify-between gap-4">
+        <span className="text-sm text-slate-400">
           Showing {startIndex}-{endIndex} of {sortedRows.length}
-        </Text>
-        <HStack spacing={2}>
-          <Button
-            size="sm"
-            variant="outline"
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
             onClick={() => setPage((current) => Math.max(1, Math.min(current, pageCount) - 1))}
-            isDisabled={normalizedPage <= 1}
+            disabled={normalizedPage <= 1}
           >
             Previous
-          </Button>
-          <Text fontSize="sm" color="slate.300">
+          </button>
+          <span className="text-sm text-slate-300">
             Page {normalizedPage} of {pageCount}
-          </Text>
-          <Button
-            size="sm"
-            variant="outline"
+          </span>
+          <button
+            type="button"
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
             onClick={() => setPage((current) => Math.min(pageCount, Math.min(current, pageCount) + 1))}
-            isDisabled={normalizedPage >= pageCount}
+            disabled={normalizedPage >= pageCount}
           >
             Next
-          </Button>
-        </HStack>
-      </HStack>
-    </Box>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -362,9 +334,9 @@ function parseDisplayNumber(value: string): number {
 function renderCell(row: PlayerStatsRowModel, column: PlayerStatsColumnKey) {
   if (column === 'name') {
     return (
-      <Text color="white" fontWeight="semibold">
+      <span className="font-semibold text-white">
         {row.name}
-      </Text>
+      </span>
     );
   }
 
@@ -388,31 +360,24 @@ function renderCell(row: PlayerStatsRowModel, column: PlayerStatsColumnKey) {
 
 function FixturesPills({ fixtures }: { fixtures: PlayerStatsFixturePill[] }) {
   if (fixtures.length === 0) {
-    return <Text color="slate.500">-</Text>;
+    return <span className="text-slate-500">-</span>;
   }
 
   return (
-    <HStack spacing={1}>
+    <div className="flex items-center gap-1">
       {fixtures.map((fixture, index) => {
         const style = getDifficultyStyle(fixture.fdr);
         return (
-          <Badge
+          <span
             key={`${fixture.opponentAbbr}-${fixture.home ? 'H' : 'A'}-${index}`}
-            px={2}
-            py={1}
-            fontSize="10px"
-            textTransform="none"
-            borderRadius="md"
-            borderWidth="1px"
-            bg={style.bg}
-            color={style.color}
-            borderColor={style.borderColor}
+            className="rounded-md border px-2 py-1 text-[10px] normal-case"
+            style={{ backgroundColor: style.bg, color: style.color, borderColor: style.borderColor }}
           >
             {fixture.home ? 'vs' : '@'} {fixture.opponentAbbr}
-          </Badge>
+          </span>
         );
       })}
-    </HStack>
+    </div>
   );
 }
 
@@ -420,34 +385,34 @@ function getDifficultyStyle(difficulty: number) {
   if (difficulty === 1) {
     return {
       bg: 'rgba(16, 185, 129, 0.12)',
-      color: 'brand.400',
+      color: '#34d399',
       borderColor: 'rgba(16, 185, 129, 0.22)',
     };
   }
   if (difficulty === 2) {
     return {
       bg: 'rgba(34, 197, 94, 0.12)',
-      color: 'green.300',
+      color: '#86efac',
       borderColor: 'rgba(34, 197, 94, 0.22)',
     };
   }
   if (difficulty === 3) {
     return {
       bg: 'rgba(100, 116, 139, 0.12)',
-      color: 'slate.300',
+      color: '#cbd5e1',
       borderColor: 'rgba(100, 116, 139, 0.22)',
     };
   }
   if (difficulty === 4) {
     return {
       bg: 'rgba(251, 146, 60, 0.12)',
-      color: 'orange.300',
+      color: '#fdba74',
       borderColor: 'rgba(251, 146, 60, 0.22)',
     };
   }
   return {
     bg: 'rgba(248, 113, 113, 0.12)',
-    color: 'red.300',
+    color: '#fca5a5',
     borderColor: 'rgba(248, 113, 113, 0.22)',
   };
 }

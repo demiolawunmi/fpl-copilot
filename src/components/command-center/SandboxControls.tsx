@@ -1,5 +1,6 @@
-import { Button, Divider, Flex, HStack, Switch, Text } from '@chakra-ui/react';
-import { DashboardCard } from '../ui/dashboard';
+import { DashboardCard } from '@/components/ui/primitives';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 
 interface Props {
   sandboxMode: boolean;
@@ -19,25 +20,21 @@ const SandboxControls = ({
   canUndo,
 }: Props) => {
   return (
-    <DashboardCard px={5} py={4}>
-      <Flex wrap="wrap" align="center" gap={4}>
-        <HStack spacing={3}>
-          <Text fontSize="sm" color="slate.400">
-            Sandbox Mode
-          </Text>
-          <Switch isChecked={sandboxMode} onChange={onToggleSandboxMode} colorScheme="green" />
-        </HStack>
+    <DashboardCard className="px-5 py-4">
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-400">Sandbox Mode</span>
+          <Switch checked={sandboxMode} onCheckedChange={onToggleSandboxMode} />
+        </div>
 
-        <Divider orientation="vertical" h={6} borderColor="whiteAlpha.200" display={{ base: 'none', md: 'block' }} />
+        <div className="hidden h-6 w-px bg-white/8 md:block" />
 
         <Button
           onClick={onUndo}
-          isDisabled={!canUndo}
+          disabled={!canUndo}
           variant="outline"
           size="sm"
-          borderColor="whiteAlpha.200"
-          color={canUndo ? 'slate.200' : 'slate.600'}
-          _hover={canUndo ? { bg: 'whiteAlpha.100', color: 'white' } : undefined}
+          className={`border-white/8 ${canUndo ? 'text-slate-200 hover:bg-white/6 hover:text-white' : 'text-slate-600'}`}
         >
           ↶ Undo
         </Button>
@@ -46,9 +43,7 @@ const SandboxControls = ({
           onClick={onReset}
           variant="outline"
           size="sm"
-          borderColor="whiteAlpha.200"
-          color="slate.200"
-          _hover={{ bg: 'whiteAlpha.100', color: 'white' }}
+          className="border-white/8 text-slate-200 hover:bg-white/6 hover:text-white"
         >
           ⟲ Reset
         </Button>
@@ -57,13 +52,11 @@ const SandboxControls = ({
           onClick={onApply}
           variant="outline"
           size="sm"
-          borderColor="rgba(16, 185, 129, 0.22)"
-          color="brand.400"
-          _hover={{ bg: 'rgba(16, 185, 129, 0.12)', color: 'brand.300' }}
+          className="border-[rgba(16,185,129,0.22)] text-emerald-400 hover:bg-[rgba(16,185,129,0.12)] hover:text-emerald-300"
         >
           ✓ Apply to Team
         </Button>
-      </Flex>
+      </div>
     </DashboardCard>
   );
 };

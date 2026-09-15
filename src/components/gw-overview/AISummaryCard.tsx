@@ -1,6 +1,7 @@
-import { Badge, Box, Button, HStack, List, ListItem, Text } from "@chakra-ui/react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DashboardCard, DashboardHeader } from "@/components/ui/primitives";
 import type { AISummary, AISummaryTone, GWInfo } from "../../data/gwOverviewMocks";
-import { DashboardCard, DashboardHeader } from "../ui/dashboard";
 
 type Props = {
     gwInfo: GWInfo;
@@ -14,51 +15,42 @@ export default function AiSummaryCard({ gwInfo, summary }: Props) {
                 title={summary.heading}
                 description={`GW ${gwInfo.gameweek} • ${gwInfo.teamName} • ${gwInfo.manager} • ${gwInfo.teamId}`}
                 action={
-                    <Badge
-                        borderRadius="full"
-                        px={2}
-                        py={1}
-                        textTransform="none"
-                        bg="whiteAlpha.100"
-                        color="slate.300"
-                        borderWidth="1px"
-                        borderColor="whiteAlpha.200"
-                    >
+                    <Badge className="rounded-full border border-white/8 bg-white/6 px-2 py-1 normal-case text-slate-300">
                         MVP
                     </Badge>
                 }
             />
 
-            <Box px={5} py={4}>
-                <Text fontSize="sm" color="slate.300" lineHeight="tall">
+            <div className="px-5 py-4">
+                <p className="text-sm leading-[1.67] text-slate-300">
                     {summary.intro}
-                </Text>
+                </p>
 
-                <List mt={4} spacing={3}>
+                <ul className="mt-4 flex flex-col gap-3">
                     {summary.items.map((item, idx) => (
-                        <ListItem key={idx} display="flex" alignItems="flex-start" gap={3}>
+                        <li key={idx} className="flex items-start gap-3">
                             <Dot tone={item.tone} />
-                            <Text fontSize="sm" color="slate.200" lineHeight="shorter">
+                            <p className="text-sm leading-tight text-slate-200">
                                 {item.text}
-                            </Text>
-                        </ListItem>
+                            </p>
+                        </li>
                     ))}
-                </List>
+                </ul>
 
-                <HStack mt={5} justify="space-between" align="center" spacing={3}>
-                    <Text fontSize="xs" color="slate.500">
+                <div className="mt-5 flex items-center justify-between gap-3">
+                    <p className="text-xs text-slate-500">
                         {summary.footerHint ?? "More detail coming soon."}
-                    </Text>
-                    <Button size="sm" variant="outline" isDisabled borderColor="whiteAlpha.200" color="slate.500">
+                    </p>
+                    <Button size="sm" variant="outline" disabled className="border-white/8 text-slate-500">
                         Refresh
                     </Button>
-                </HStack>
-            </Box>
+                </div>
+            </div>
         </DashboardCard>
     );
 }
 
 function Dot({ tone }: { tone: AISummaryTone }) {
-    const bg = tone === "good" ? "brand.400" : tone === "warn" ? "yellow.400" : "sky.400";
-    return <Box mt={2} boxSize={2} borderRadius="full" bg={bg} flexShrink={0} />;
+    const bg = tone === "good" ? "bg-emerald-400" : tone === "warn" ? "bg-yellow-400" : "bg-sky-400";
+    return <div className={`mt-2 size-2 shrink-0 rounded-full ${bg}`} />;
 }

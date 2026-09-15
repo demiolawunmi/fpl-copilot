@@ -1,14 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Alert,
-  AlertDescription,
-  Container,
-  Heading,
-  Skeleton,
-  SkeletonText,
-  Stack,
-  Text,
-} from '@chakra-ui/react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { fetchJson } from '../api/fpl/client';
 import { fplEndpoints } from '../api/fpl/endpoints';
@@ -22,7 +12,8 @@ import PlayerStatsFilters, {
   usePersistedPlayerStatsColumns,
 } from '../components/player-statistics/PlayerStatsFilters';
 import PlayerStatsTable from '../components/player-statistics/PlayerStatsTable';
-import { DashboardCard, DashboardHeader } from '../components/ui/dashboard';
+import { DashboardCard, DashboardHeader } from '@/components/ui/primitives';
+import { Skeleton } from '@/components/ui/skeleton';
 import { usePredictionsData } from '../hooks/usePredictionsData';
 import { createTeamAbbreviationMap } from '../utils/playerStatsFormat';
 import {
@@ -169,53 +160,51 @@ const PlayersPage = () => {
   };
 
   return (
-    <Container maxW="8xl" flex="1" px={{ base: 4, md: 6, xl: 10 }} py={{ base: 6, xl: 8 }}>
-      <Stack spacing={6}>
-        <Stack spacing={1.5}>
-          <Heading size="lg" color="white">
-            Player Statistics
-          </Heading>
-          <Text color="slate.400" fontSize="sm">
+    <div className="mx-auto flex w-full max-w-[90rem] flex-1 flex-col px-4 py-6 md:px-6 xl:px-10 xl:py-8">
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-2xl font-bold leading-[1.33] text-white">Player Statistics</h1>
+          <p className="text-sm text-slate-400">
             Season to date from official FPL bootstrap and fixtures data.
-          </Text>
-        </Stack>
+          </p>
+        </div>
 
         {error && !loading ? (
-          <Alert
-            status="warning"
-            borderRadius="xl"
-            bg="rgba(234, 179, 8, 0.08)"
-            borderWidth="1px"
-            borderColor="rgba(234, 179, 8, 0.2)"
+          <div
+            role="alert"
+            className="rounded-xl border bg-[rgba(234,179,8,0.08)] px-4 py-3"
+            style={{ borderColor: 'rgba(234, 179, 8, 0.2)' }}
           >
-            <AlertDescription color="yellow.300" fontSize="sm">
+            <p className="text-sm text-yellow-300">
               Couldn&apos;t load player statistics. {error}
-            </AlertDescription>
-          </Alert>
+            </p>
+          </div>
         ) : null}
 
         {loading ? (
-          <Stack spacing={6}>
-            <Stack direction={{ base: 'column', lg: 'row' }} spacing={4}>
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-4 lg:flex-row">
               {Array.from({ length: 3 }).map((_, index) => (
-                <Skeleton key={`leader-skeleton-${index}`} height="220px" borderRadius="2xl" flex="1" />
+                <Skeleton key={`leader-skeleton-${index}`} className="h-[220px] flex-1 rounded-2xl" />
               ))}
-            </Stack>
+            </div>
             <DashboardCard>
               <DashboardHeader title="Filters" description="Search, narrow, and customize columns" />
-              <Stack px={5} py={4} spacing={4}>
-                <Skeleton height="42px" borderRadius="md" />
-                <Skeleton height="42px" borderRadius="md" />
-                <Skeleton height="42px" borderRadius="md" />
-              </Stack>
+              <div className="flex flex-col gap-4 px-5 py-4">
+                <Skeleton className="h-[42px] rounded-md" />
+                <Skeleton className="h-[42px] rounded-md" />
+                <Skeleton className="h-[42px] rounded-md" />
+              </div>
             </DashboardCard>
             <DashboardCard>
               <DashboardHeader title="Statistics table" description="All players" />
-              <Stack px={5} py={4} spacing={4}>
-                <SkeletonText noOfLines={8} spacing={3} skeletonHeight="4" />
-              </Stack>
+              <div className="flex flex-col gap-3 px-5 py-4">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <Skeleton key={`table-skeleton-${index}`} className="h-4" />
+                ))}
+              </div>
             </DashboardCard>
-          </Stack>
+          </div>
         ) : (
           <>
             <PlayerLeaderboardCards cards={leaderboardCards} />
@@ -225,7 +214,7 @@ const PlayersPage = () => {
                 title="Filters"
                 description="Search by player, filter by team and position, and customize visible columns."
               />
-              <Stack px={5} py={4} spacing={4}>
+              <div className="flex flex-col gap-4 px-5 py-4">
                 <PlayerStatsFilters
                   value={filters}
                   onChange={setFilters}
@@ -233,7 +222,7 @@ const PlayersPage = () => {
                   visibleColumns={visibleColumns}
                   onVisibleColumnsChange={setVisibleColumns}
                 />
-              </Stack>
+              </div>
             </DashboardCard>
 
             <DashboardCard>
@@ -241,7 +230,7 @@ const PlayersPage = () => {
                 title="Statistics table"
                 description="Sortable season metrics for all players in the game."
               />
-              <Stack px={5} py={4} spacing={4}>
+              <div className="flex flex-col gap-4 px-5 py-4">
                 <PlayerStatsTable
                   rows={filteredRows}
                   visibleColumns={visibleColumns}
@@ -249,12 +238,12 @@ const PlayersPage = () => {
                   onViewClick={handleViewClick}
                   emptyText="No players match your filters right now."
                 />
-              </Stack>
+              </div>
             </DashboardCard>
           </>
         )}
-      </Stack>
-    </Container>
+      </div>
+    </div>
   );
 };
 

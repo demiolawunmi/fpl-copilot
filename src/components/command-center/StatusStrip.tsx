@@ -1,6 +1,7 @@
-import { Badge, Box, HStack, Text, Tooltip, Wrap, WrapItem } from '@chakra-ui/react';
 import type { TeamStatus } from '../../data/commandCenterMocks';
-import { DashboardCard } from '../ui/dashboard';
+import { DashboardCard } from '@/components/ui/primitives';
+import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface StatusStripConfig {
   // Tooltip vertical offset in pixels (how far above the bar the tooltip appears)
@@ -15,6 +16,16 @@ interface Props {
   status: TeamStatus;
   config?: StatusStripConfig;
 }
+
+// Wildcard season split happens around the end of December. Derive the
+// default cutoff from the current FPL season (Aug–May window) instead of a
+// hardcoded date so it rolls over automatically each season.
+const deriveWildcardCutoffIso = (): string => {
+  const now = new Date();
+  // Seasons run Aug–May: from July onwards we're in the season starting this year.
+  const seasonStartYear = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${seasonStartYear}-12-30T13:00:00`;
+};
 
 const StatusStrip = ({ status, config }: Props) => {
   const chipNames = {
@@ -41,7 +52,7 @@ const StatusStrip = ({ status, config }: Props) => {
   // Default configuration
   const defaultConfig: Required<StatusStripConfig> = {
     tooltipOffsetPx: 12, // how far above the bar the tooltip sits (px)
-    wildcardCutoffIso: '2025-12-30T13:00:00', // default cutoff (changeable via config)
+    wildcardCutoffIso: deriveWildcardCutoffIso(), // default cutoff (changeable via config)
     showWildcardSeasonSplit: true,
   };
 
@@ -68,33 +79,33 @@ const StatusStrip = ({ status, config }: Props) => {
     : cfg.wildcardCutoffIso;
 
   return (
-    <DashboardCard px={5} py={4}>
-      <Wrap spacing={6} align="center">
-        <WrapItem>
-          <HStack spacing={2}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">Free Transfers</Text>
-            <Text fontSize="md" fontWeight="bold" color="white">{status.freeTransfers}</Text>
-          </HStack>
-        </WrapItem>
+    <DashboardCard className="px-5 py-4">
+      <div className="flex flex-wrap items-center gap-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Free Transfers</span>
+            <span className="text-base font-bold text-white">{status.freeTransfers}</span>
+          </div>
+        </div>
 
-        <WrapItem>
-          <HStack spacing={2}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">Bank</Text>
-            <Text fontSize="md" fontWeight="bold" color="brand.400">£{status.bank.toFixed(1)}m</Text>
-          </HStack>
-        </WrapItem>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Bank</span>
+            <span className="text-base font-bold text-emerald-400">£{status.bank.toFixed(1)}m</span>
+          </div>
+        </div>
 
-        <WrapItem>
-          <HStack spacing={2}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">Team Value</Text>
-            <Text fontSize="md" fontWeight="bold" color="white">£{status.teamValue.toFixed(1)}m</Text>
-          </HStack>
-        </WrapItem>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Team Value</span>
+            <span className="text-base font-bold text-white">£{status.teamValue.toFixed(1)}m</span>
+          </div>
+        </div>
 
-        <WrapItem>
-          <HStack spacing={2} align="center">
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">Chips</Text>
-            <HStack spacing={1.5}>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Chips</span>
+            <div className="flex items-center gap-1.5">
               {(Object.keys(chipNames) as Array<keyof typeof chipNames>).map((chipKey) => {
                 const chip = status.chips[chipKey];
                 const wildcardNote = cfg.showWildcardSeasonSplit && chipKey === 'wildcard'
@@ -104,56 +115,55 @@ const StatusStrip = ({ status, config }: Props) => {
                   : null;
 
                 const tooltip = (
-                  <Box color="white">
-                    <HStack justify="space-between" align="start" spacing={2}>
-                      <Text fontWeight="semibold" color="white">{chipFull[chipKey]}</Text>
-                      <Text fontSize="xs" color={chip.available ? 'brand.300' : 'slate.400'}>
+                  <div className="text-white">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-semibold text-white">{chipFull[chipKey]}</span>
+                      <span className={`text-xs ${chip.available ? 'text-emerald-300' : 'text-slate-400'}`}>
                         {chip.available ? 'Available' : 'Used'}
-                      </Text>
-                    </HStack>
-                    <Text mt={2} fontSize="xs" color="slate.300">{chipDesc[chipKey]}</Text>
-                    <Text mt={2} fontSize="11px" color="slate.300">
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-300">{chipDesc[chipKey]}</p>
+                    <p className="mt-2 text-[11px] text-slate-300">
                       {chip.used ? `Used: ${chip.used}` : chip.available ? 'Can be used this GW' : 'Not available'}
-                    </Text>
+                    </p>
                     {wildcardNote ? (
-                      <Text mt={2} fontSize="11px" color="whiteAlpha.900" fontWeight="medium">{wildcardNote}</Text>
+                      <p className="mt-2 text-[11px] font-medium text-white/92">{wildcardNote}</p>
                     ) : null}
-                  </Box>
+                  </div>
                 );
 
                 return (
-                  <Tooltip key={chipKey} label={tooltip} hasArrow placement="top" openDelay={150} gutter={cfg.tooltipOffsetPx} bg="rgba(15, 23, 42, 0.96)" borderWidth="1px" borderColor="whiteAlpha.200" px={3} py={2}>
-                    <Badge
-                      px={2}
-                      py={1}
-                      fontSize="10px"
-                      fontWeight="bold"
-                      borderRadius="md"
-                      textTransform="none"
-                      cursor="default"
-                      borderWidth="1px"
-                      bg={chip.available ? 'rgba(16, 185, 129, 0.12)' : 'whiteAlpha.100'}
-                      color={chip.available ? 'brand.400' : 'slate.500'}
-                      borderColor={chip.available ? 'rgba(16, 185, 129, 0.22)' : 'whiteAlpha.200'}
-                    >
-                      {chipNames[chipKey]}
-                    </Badge>
+                  <Tooltip key={chipKey} delayDuration={150}>
+                    <TooltipTrigger asChild>
+                      <Badge
+                        className={`cursor-default rounded-md border px-2 py-1 text-[10px] font-bold normal-case ${
+                          chip.available
+                            ? 'border-[rgba(16,185,129,0.22)] bg-[rgba(16,185,129,0.12)] text-emerald-400'
+                            : 'border-white/8 bg-white/6 text-slate-500'
+                        }`}
+                      >
+                        {chipNames[chipKey]}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={cfg.tooltipOffsetPx} className="border border-white/8 bg-[rgba(15,23,42,0.96)] px-3 py-2">
+                      {tooltip}
+                    </TooltipContent>
                   </Tooltip>
                 );
               })}
-            </HStack>
-          </HStack>
-        </WrapItem>
+            </div>
+          </div>
+        </div>
 
-        <WrapItem ms={{ base: 0, xl: 'auto' }}>
-          <HStack spacing={2}>
-            <Text fontSize="xs" textTransform="uppercase" letterSpacing="wide" color="slate.500">Deadline</Text>
-            <Text fontSize="md" fontWeight="bold" color={deadlinePassed ? 'red.300' : 'yellow.300'}>
+        <div className="ms-0 xl:ms-auto">
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Deadline</span>
+            <span className={`text-base font-bold ${deadlinePassed ? 'text-red-300' : 'text-yellow-300'}`}>
               {deadlinePassed ? 'Passed' : daysRemaining > 0 ? `${daysRemaining}d ${hoursRemaining % 24}h` : `${hoursRemaining}h`}
-            </Text>
-          </HStack>
-        </WrapItem>
-      </Wrap>
+            </span>
+          </div>
+        </div>
+      </div>
     </DashboardCard>
   );
 };

@@ -29,6 +29,8 @@ export type {
 
 // Bandwagons endpoint
 export { getBandwagons } from "./bandwagons";
+export { getSeasonStatus } from "./seasonStatus";
+export type { SeasonStatus } from "./seasonStatus";
 export type { BandwagonPlayer, BandwagonsResponse } from "./bandwagons";
 
 // Injury News endpoint

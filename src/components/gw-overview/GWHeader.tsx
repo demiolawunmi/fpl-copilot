@@ -1,4 +1,4 @@
-import { Box, Flex, Heading, IconButton, Text } from '@chakra-ui/react';
+import { Button } from '@/components/ui/button';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import type { GWInfo } from '../../data/gwOverviewMocks';
 
@@ -11,36 +11,36 @@ interface Props {
 }
 
 const GWHeader = ({ info, onPrev, onNext, disablePrev, disableNext }: Props) => (
-  <Flex align="center" justify="space-between" gap={4}>
-    <IconButton
+  <div className="flex items-center justify-between gap-4">
+    <Button
       aria-label="Previous gameweek"
-      icon={<FiChevronLeft size={20} />}
       onClick={onPrev}
-      isDisabled={disablePrev}
+      disabled={disablePrev}
       variant="ghost"
-      bg="whiteAlpha.100"
-      color={disablePrev ? 'slate.500' : 'white'}
-      _hover={{ bg: 'whiteAlpha.200' }}
-    />
+      size="icon"
+      className={`bg-white/6 hover:bg-white/8 ${disablePrev ? 'text-slate-500' : 'text-white'}`}
+    >
+      <FiChevronLeft size={20} />
+    </Button>
 
-    <Box textAlign="center" flex="1">
-      <Heading size="lg">Gameweek {info.gameweek}</Heading>
-      <Text mt={1} fontSize="sm" color="slate.400">
+    <div className="flex-1 text-center">
+      <h2 className="text-2xl font-bold leading-[1.33]">Gameweek {info.gameweek}</h2>
+      <p className="mt-1 text-sm text-slate-400">
         {info.teamName} · {info.manager} · ID {info.teamId}
-      </Text>
-    </Box>
+      </p>
+    </div>
 
-    <IconButton
+    <Button
       aria-label="Next gameweek"
-      icon={<FiChevronRight size={20} />}
       onClick={onNext}
-      isDisabled={disableNext}
+      disabled={disableNext}
       variant="ghost"
-      bg="whiteAlpha.100"
-      color={disableNext ? 'slate.500' : 'white'}
-      _hover={{ bg: 'whiteAlpha.200' }}
-    />
-  </Flex>
+      size="icon"
+      className={`bg-white/6 hover:bg-white/8 ${disableNext ? 'text-slate-500' : 'text-white'}`}
+    >
+      <FiChevronRight size={20} />
+    </Button>
+  </div>
 );
 
 export default GWHeader;
