@@ -1,5 +1,6 @@
 import { fetchJson } from "./client";
 import { fplEndpoints } from "./endpoints";
+import { cached } from "../../lib/cache";
 
 // -------------------------
 // Minimal FPL response types
@@ -202,11 +203,36 @@ export type ElementSummaryResponse = {
 // -------------------------
 
 export async function getEntry(teamId: string) {
-    return fetchJson<FplEntry>(fplEndpoints.entry(teamId));
+    return cached(`fpl:entry:${teamId}`, CACHE_TTL_MS, () =>
+        fetchJson<FplEntry>(fplEndpoints.entry(teamId)),
+    );
 }
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 export async function getBootstrap() {
-    return fetchJson<FplBootstrap>(fplEndpoints.bootstrap());
+    return cached("fpl:bootstrap", CACHE_TTL_MS, () =>
+        fetchJson<FplBootstrap>(fplEndpoints.bootstrap()),
+    );
+}
+
+export type FplFixtureApi = {
+    id?: number;
+    event: number | null;
+    team_h: number;
+    team_a: number;
+    kickoff_time: string | null;
+    finished: boolean;
+    team_h_score: number | null;
+    team_a_score: number | null;
+    team_h_difficulty?: number | null;
+    team_a_difficulty?: number | null;
+};
+
+export async function getFixtures(): Promise<FplFixtureApi[]> {
+    return cached("fpl:fixtures", CACHE_TTL_MS, () =>
+        fetchJson<FplFixtureApi[]>(fplEndpoints.fixtures()),
+    );
 }
 
 export async function getPicks(teamId: string, gw: number) {

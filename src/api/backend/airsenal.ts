@@ -21,6 +21,8 @@ export interface FormLast4Player {
   last4_minutes?: number;
   last_4_minutes?: number;
   minutes_last4?: number;
+  last4_xgi?: number;
+  last4_xgc?: number;
   xG?: number;
   xg?: number;
   expected_goals?: number;

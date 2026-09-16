@@ -19,6 +19,9 @@ export interface InjuryNewsPlayer {
   news?: string;
   source_news?: string;
   status?: string;
+  absence_type?: string;
+  position?: string;
+  position_group?: string;
 }
 
 export type InjuryNewsResponse = InjuryNewsPlayer[];

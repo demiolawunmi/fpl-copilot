@@ -54,4 +54,19 @@ export async function getMyTeam(): Promise<MyTeamResponse> {
   return backendFetch<MyTeamResponse>("/api/files/my_team");
 }
 
+export interface RefreshTeamResponse {
+  ok: boolean;
+  my_team_mtime: number | null;
+  stdout?: string;
+}
+
+/**
+ * Re-pull the authenticated squad from the official FPL API (backend runs the
+ * private FPL adapter and rewrites my_team.json). Use after changing your team
+ * on the official platform, then re-fetch `getMyTeam()`.
+ */
+export async function refreshMyTeam(): Promise<RefreshTeamResponse> {
+  return backendFetch<RefreshTeamResponse>("/api/fpl/refresh-team", { method: "POST" });
+}
+
 

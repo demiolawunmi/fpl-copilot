@@ -71,18 +71,32 @@ const writeCache = (segment: string): void => {
 };
 
 const probeSegment = async (segment: string): Promise<boolean> => {
-    const url =
-        `https://resources.premierleague.com/premierleague${segment}` +
-        `/photos/players/110x140/placeholder.png`;
-    try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-        const res = await fetch(url, { method: "HEAD", signal: controller.signal });
-        clearTimeout(timer);
-        return res.ok;
-    } catch {
-        return false;
+  const url =
+    `https://resources.premierleague.com/premierleague${segment}` +
+    `/photos/players/110x140/placeholder.png`;
+  // Probe with an Image element (not fetch) so the browser does not emit a
+  // CORS error — asset <img> loads are not subject to the same restriction.
+  return new Promise<boolean>((resolve) => {
+    if (typeof Image === "undefined") {
+      resolve(false);
+      return;
     }
+    const img = new Image();
+    const timer = setTimeout(() => {
+      img.onload = null;
+      img.onerror = null;
+      resolve(false);
+    }, PROBE_TIMEOUT_MS);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    img.src = url;
+  });
 };
 
 /**

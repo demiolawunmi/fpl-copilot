@@ -1,1331 +1,1299 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { toast } from 'sonner';
-import { ChevronUp, ChevronDown, Loader2 } from 'lucide-react';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Icon } from '../components/Icon';
+import { Card } from '../components/ds/Card';
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Crest,
+  Empty,
+  Segmented,
+  SkeletonLines,
+} from '../components/ds/atoms';
+import { ColChart, Bars } from '../components/ds/charts';
+import { Countdown } from '../components/ds/Countdown';
+import { BenchRow, Pitch } from '../components/ds/Pitch';
+import { AiSummaryCard, FixturesSnapshotCard, InjuriesCard } from '../components/shared';
+import { PlayerActionDialog } from '../components/player/PlayerActionDialog';
+import { useCore } from '../context/CoreContext';
+import { useSquad, type SandboxDelta } from '../context/SquadContext';
+import { useToast } from '../context/ToastContext';
 import { useTeamId } from '../context/TeamIdContext';
 import {
-  mockCommandCenterAISummary,
-  mockFixturesSnapshot,
-  mockRecommendedTransfers,
-  mockModelSources,
-  mockVideoInsights,
-} from '../data/commandCenterMocks';
-import type {
-  CommandCenterAISummary,
-  EnhancedPlayer,
-  ModelSource,
-  RecommendedTransferItem,
-  SandboxAction,
-  TeamStatus,
-} from '../data/commandCenterMocks';
-
-// Import components
-import StatusStrip from '../components/command-center/StatusStrip';
-import SeasonStatusBanner from '../components/command-center/SeasonStatusBanner';
-import PitchCard from '../components/gw-overview/PitchCard';
-import AICommandSummary from '../components/command-center/AICommandSummary';
-import InjuriesSuspensionsCard from '../components/command-center/InjuriesSuspensionsCard';
-import FixturesSnapshot from '../components/command-center/FixturesSnapshot';
-import QuickActions from '../components/command-center/QuickActions';
-import SandboxControls from '../components/command-center/SandboxControls';
-import DeltaStrip from '../components/command-center/DeltaStrip';
-import RecommendedTransfersList from '../components/command-center/RecommendedTransfersList';
-import CustomTransferBuilder from '../components/command-center/CustomTransferBuilder';
-import ModelComparisonPanel from '../components/command-center/ModelComparisonPanel';
-import SandboxCharts from '../components/command-center/SandboxCharts';
-import AskCopilotChat from '../components/command-center/AskCopilotChat';
-import VideoInsightsStrip from '../components/command-center/VideoInsightsStrip';
-import { DashboardCard } from '@/components/ui/primitives';
-
-// Command Center hook – targets the NEXT GW and uses /api/fpl/my-team picks
-import { useCommandCenterData } from '../hooks/useCommandCenterData';
-import { usePredictionsData } from '../hooks/usePredictionsData';
-import type { Player as UiPlayer } from '../data/gwOverviewMocks';
-import InFormCard from '../components/command-center/InFormCard';
-import BandwagonsCard from '../components/command-center/BandwagonsCard';
-import { getOpponentDifficulty } from '../utils/difficulty';
-import { runAirsenal } from '../api/backend';
-import {
+  runAirsenal,
   submitCopilotBlendJob,
-  pollCopilotBlendJob,
-  isApiError,
-  getCopilotBlendSnapshot,
-  getCopilotBlendSnapshotGlobal,
-  type CopilotSourceWeights,
-  type CopilotBlendJobStatusResponse,
-  type CopilotErrorResponse,
-  type CopilotHybridResultPayload,
+  getCopilotBlendJobStatus,
+  postCopilotChat,
   type CopilotBlendSubmitRequest,
-  type CopilotBlendSnapshot,
+  type CopilotChatTurn,
 } from '../api/backend';
-import { elementTypeToPosition, getPlayerPhotoUrl } from '../api/fpl/fpl';
+import { findPlayerIdByName, nextFixtures } from '../domain/model';
+import { clamp, compactCount, money, num, plus } from '../lib/format';
+import { xiXpts } from '../domain/projection';
+import type { Player } from '../domain/types';
 
-type Tab = 'pick-team' | 'sandbox';
+const DEFAULT_WEIGHTS = { official: 25, elo: 25, airsenal: 25, copilot: 25 };
 
-type BlendApplyPhase = 'idle' | 'submitting' | 'queued' | 'running' | 'completed' | 'failed';
-
-type BlendApplyUiState = {
-  phase: BlendApplyPhase;
-  jobId?: string;
-  message?: string;
-  retryable?: boolean;
-  error?: CopilotErrorResponse | null;
-};
-
-const BLEND_SCHEMA_VERSION = '1.0';
-const BLEND_POLL_INTERVAL_MS = 1500;
-const BLEND_POLL_TIMEOUT_MS = 90_000;
-const DEFAULT_BLEND_TAB: Tab = 'pick-team';
-
-const parseInitialTab = (rawSearch: string): Tab => {
-  const tab = new URLSearchParams(rawSearch).get('tab');
-  return tab === 'sandbox' || tab === 'pick-team' ? tab : DEFAULT_BLEND_TAB;
-};
-
-const parseBlendWeightsFromSearch = (rawSearch: string, sources: ModelSource[]): Map<string, number> => {
-  const raw = new URLSearchParams(rawSearch).get('blend');
-  if (!raw) return new Map();
-
-  const values = raw
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const [id, valueText] = entry.split(':').map((part) => part.trim());
-      const weight = Number.parseInt(valueText ?? '', 10);
-      return {
-        id,
-        weight,
-      };
-    })
-    .filter((entry) => entry.id && Number.isFinite(entry.weight));
-
-  if (values.length === 0) return new Map();
-
-  const validIds = new Set(sources.map((source) => source.id));
-  const map = new Map<string, number>();
-  for (const entry of values) {
-    if (!validIds.has(entry.id)) continue;
-    map.set(entry.id, Math.max(0, Math.min(100, entry.weight)));
-  }
-  return map;
-};
-
-const clampWeeksAhead = (n: number) => Math.min(38, Math.max(1, Math.round(n)));
-
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-
-const confidenceToTone = (confidence: number): 'good' | 'info' | 'warn' => {
-  if (confidence >= 0.67) return 'good';
-  if (confidence >= 0.4) return 'info';
-  return 'warn';
-};
-
-const sleep = (ms: number) => new Promise<void>((resolve) => {
-  window.setTimeout(resolve, ms);
-});
-
-/** Only hydrate saved JSON when it matches the logged-in FPL entry (strict when team id is set). */
-const snapshotMatchesTeam = (
-  snap: CopilotBlendSnapshot,
-  currentTeamId: number | null,
-): boolean => {
-  const st = snap.input?.fpl_team_id;
-  if (currentTeamId != null && currentTeamId > 0) {
-    return typeof st === 'number' && st === currentTeamId;
-  }
-  return st == null;
-};
-
-const createCorrelationId = () => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  return `cc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-};
-
-/** FPL formation rules: exactly 1 GK, 3-5 DEF, 2-5 MID, 1-3 FWD, 11 starters total. */
-function validateFormation(squad: EnhancedPlayer[]): string | null {
-  const starters = squad.filter((p) => !p.isBench);
-  const gk = starters.filter((p) => p.position === 'GK').length;
-  const def = starters.filter((p) => p.position === 'DEF').length;
-  const mid = starters.filter((p) => p.position === 'MID').length;
-  const fwd = starters.filter((p) => p.position === 'FWD').length;
-  if (gk !== 1) return `Must have exactly 1 starting GK (would have ${gk})`;
-  if (def < 3) return `Need at least 3 starting DEF (would have ${def})`;
-  if (def > 5) return `Max 5 starting DEF (would have ${def})`;
-  if (mid < 2) return `Need at least 2 starting MID (would have ${mid})`;
-  if (mid > 5) return `Max 5 starting MID (would have ${mid})`;
-  if (fwd < 1) return `Need at least 1 starting FWD (would have ${fwd})`;
-  if (fwd > 3) return `Max 3 starting FWD (would have ${fwd})`;
-  if (starters.length !== 11) return `Must have 11 starters (would have ${starters.length})`;
-  return null;
+/**
+ * The backend blend accepts exactly two model sources (Club Elo + AIrsenal)
+ * whose weights must sum to 1.0. The UI exposes four models for context, so
+ * the two blendable sources are normalized to a valid pair.
+ */
+function normalizeSourceWeights(elo: number, airsenal: number): { elo: number; airsenal: number } {
+  const sum = elo + airsenal;
+  if (sum <= 0) return { elo: 0.5, airsenal: 0.5 };
+  return {
+    elo: Math.round((elo / sum) * 1000) / 1000,
+    airsenal: Math.round(((sum - elo) / sum) * 1000) / 1000,
+  };
 }
 
-const mapUiPlayerToEnhanced = (
-  p: UiPlayer,
-  lookupPrediction: (name: string, teamAbbr?: string) => import('../api/backend').PredictionPlayer | undefined,
-  fixturesByName: Map<string, import('../api/backend').PlayerFixture>,
-): EnhancedPlayer => {
-  const pred = lookupPrediction(p.name, p.teamAbbr);
-  const fixture = fixturesByName.get(norm(p.name));
-
-  return {
-    id: p.id ?? 0,
-    name: p.name,
-    position: p.position,
-    team: '',
-    teamAbbr: p.teamAbbr ?? '',
-    price: p.sellingPrice ? p.sellingPrice / 10 : 0,
-    xPts: pred?.xp ?? 0,
-    points: p.points ?? 0,
-    minutesRisk: 'Unknown',
-    injuryStatus: 'Available',
-    isCaptain: p.isCaptain,
-    isViceCaptain: p.isViceCaptain,
-    isBench: p.isBench,
-    photoUrl: p.photoUrl,
-    opponents: fixture?.fixtures?.map((f) =>
-      `${f.is_home ? 'H' : 'A'} ${f.opponent_short}`
-    ) ?? p.opponents,
-  };
-};
-
-const CommandCenterPage = () => {
-  const { teamId } = useTeamId();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [activeTab, setActiveTab] = useState<Tab>(() => parseInitialTab(location.search));
-
-  // Dedicated Command Center hook – always targets next GW, uses backend picks
-  const cc = useCommandCenterData(teamId);
-  
-  // AIrsenal predictions & fixtures hook
-  const predictions = usePredictionsData(cc.nextGW > 0 ? cc.nextGW : null);
-
-  // Bootstrap elements list for photo resolution in side-cards
-  const bootstrapElements = useMemo(() => cc.bootstrap?.elements ?? [], [cc.bootstrap]);
-
-  // State for sandbox
-  const [sandboxSquad, setSandboxSquad] = useState<EnhancedPlayer[]>([]);
-  const [sandboxActions, setSandboxActions] = useState<SandboxAction[]>([]);
-  const [sandboxMode, setSandboxMode] = useState(false);
-  const [optimizationLoading, setOptimizationLoading] = useState(false);
-  const [optimizationDialogOpen, setOptimizationDialogOpen] = useState(false);
-  const [weeksAhead, setWeeksAhead] = useState(3);
-  const [swapSelection, setSwapSelection] = useState<number | null>(null);
-  const [sandboxBankDelta, setSandboxBankDelta] = useState(0);
-  const [blendApplyState, setBlendApplyState] = useState<BlendApplyUiState>({ phase: 'idle' });
-  const [completedBlendPayload, setCompletedBlendPayload] = useState<CopilotHybridResultPayload | null>(null);
-  const [savedBlendInput, setSavedBlendInput] = useState<CopilotBlendSubmitRequest | null>(null);
-  const [modelSources, setModelSources] = useState<ModelSource[]>(() => {
-    const defaults = mockModelSources.map((source) => ({ ...source }));
-    const seeded = parseBlendWeightsFromSearch(location.search, defaults);
-    if (seeded.size === 0) return defaults;
-    return defaults.map((source) => (
-      seeded.has(source.id)
-        ? { ...source, weight: seeded.get(source.id) ?? source.weight }
-        : source
-    ));
-  });
-  const activeBlendPollRunRef = useRef(0);
-
-  const blendTotal = useMemo(
-    () => modelSources.reduce((sum, source) => sum + source.weight, 0),
-    [modelSources],
-  );
-  const blendRemaining = 100 - blendTotal;
-  const isBlendInvalid = blendTotal > 100;
-
-  const blendStatusMessage = useMemo(() => {
-    // Map UI states: valid-zero (no suggestions), degraded (provider/schema fallback), pending/running, failed
-    if (blendApplyState.phase === 'completed' && completedBlendPayload) {
-      const transferCount = completedBlendPayload.recommended_transfers.length;
-      const confidencePct = Math.round(completedBlendPayload.core.confidence * 100);
-
-      if (completedBlendPayload.degraded_mode?.is_degraded) {
-        const code = completedBlendPayload.degraded_mode.code ?? 'FALLBACK';
-        const msg = completedBlendPayload.degraded_mode.message ?? '';
-        return (
-          <p className="font-medium text-orange-300">
-            <span className="mr-1">⚠️</span>
-            Degraded Output ({code}): {msg}
-          </p>
-        );
-      }
-
-      if (transferCount === 0) {
-        // Valid zero: model intentionally returned no confident suggestions
-        return (
-          <p className="font-medium text-blue-300">
-            <span className="mr-1">ℹ️</span>
-            No confident transfer suggestions. Confidence: {confidencePct}%
-          </p>
-        );
-      }
-
-      return (
-        <p className="font-medium text-green-300">
-          <span className="mr-1">✅</span>
-          Blend ready: {transferCount} transfer suggestion(s), {confidencePct}% confidence.
-        </p>
-      );
-    }
-
-    if (blendApplyState.phase === 'running' || blendApplyState.phase === 'submitting' || blendApplyState.phase === 'queued') {
-      return <p className="text-blue-200">{blendApplyState.message ?? 'Blend job in progress...'}</p>;
-    }
-
-    if (blendApplyState.phase === 'failed') {
-      const errorCode = blendApplyState.error?.error.code;
-      const baseMsg = blendApplyState.message ?? 'Blend job failed.';
-      return (
-        <p className="font-medium text-red-300">
-          <span className="mr-1">❌</span>
-          {errorCode ? `${baseMsg} [${errorCode}]` : baseMsg}
-        </p>
-      );
-    }
-
-    return <p className="text-slate-300">{blendApplyState.message}</p>;
-  }, [blendApplyState, completedBlendPayload]);
-
-  const realSquad = useMemo(() => {
-    if (cc.loading || cc.error != null || cc.squad.length === 0 || predictions.loading) {
-      return [] as EnhancedPlayer[];
-    }
-
-    return cc.squad.map((p) =>
-      mapUiPlayerToEnhanced(
-        p as UiPlayer,
-        predictions.lookupPrediction,
-        predictions.fixturesByName,
-      ),
-    );
-  }, [cc.loading, cc.error, cc.squad, predictions.loading, predictions.lookupPrediction, predictions.fixturesByName]);
-
-  const currentSandboxSquad = sandboxActions.length > 0 ? sandboxSquad : realSquad;
-  const hasLiveMyTeam = cc.myTeam != null && realSquad.length > 0;
-
-  const teamStatus: TeamStatus = useMemo(() => {
-    const mt = cc.myTeam;
-    if (!mt) {
-      return {
-        freeTransfers: 0,
-        bank: 0,
-        teamValue: Number(realSquad.reduce((sum, player) => sum + (player.price || 0), 0).toFixed(1)),
-        chips: {
-          wildcard: { available: false },
-          freehit: { available: false },
-          bboost: { available: false },
-          tcaptain: { available: false },
-        },
-        deadline: cc.bootstrap?.events.find((e) => e.is_next)?.deadline_time ?? new Date().toISOString(),
-      };
-    }
-
-    const chipMap: Record<string, keyof TeamStatus['chips']> = {
-      wildcard: 'wildcard',
-      freehit: 'freehit',
-      bboost: 'bboost',
-      '3xc': 'tcaptain',
-    };
-
-    const chips: TeamStatus['chips'] = {
-      wildcard: { available: false },
-      freehit: { available: false },
-      bboost: { available: false },
-      tcaptain: { available: false },
-    };
-
-    for (const c of mt.chips) {
-      const key = chipMap[c.name];
-      if (!key) continue;
-      const isAvailable = c.status_for_entry === 'available' && !c.is_pending;
-      const usedGW = c.played_by_entry.length > 0 ? `GW ${c.played_by_entry[0]}` : undefined;
-      chips[key] = { available: isAvailable, used: usedGW };
-    }
-
-    const nextEvent = cc.bootstrap?.events.find((e) => e.is_next);
-    const deadline = nextEvent?.deadline_time ?? new Date().toISOString();
-
-    const transferLimit = Number(mt.transfers.limit ?? 0);
-    const transfersMade = Number(mt.transfers.made ?? 0);
-    const bankTenths = Number(mt.transfers.bank ?? 0);
-    const backendValueTenths = Number(mt.transfers.value ?? 0);
-    const derivedSquadValue = realSquad.reduce((sum, player) => sum + (player.price || 0), 0);
-
-    return {
-      freeTransfers: Math.max(0, transferLimit - transfersMade),
-      bank: Number((bankTenths / 10).toFixed(1)),
-      teamValue: Number(((backendValueTenths > 0 ? backendValueTenths / 10 : derivedSquadValue)).toFixed(1)),
-      chips,
-      deadline,
-    };
-  }, [cc.myTeam, cc.bootstrap, realSquad]);
-
-  const nextGW = cc.nextGW;
-  const teamName = cc.gwInfo?.teamName ?? 'My Team';
-
-  useEffect(() => {
-    let cancelled = false;
-    const parsed = teamId?.trim() ? Number.parseInt(teamId.trim(), 10) : NaN;
-    const currentTeamId = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-    const gw = nextGW > 0 ? nextGW : 0;
-    if (gw <= 0) return;
-
-    async function loadSnapshot() {
-      try {
-        const snap =
-          currentTeamId != null
-            ? await getCopilotBlendSnapshot(gw, currentTeamId)
-            : await getCopilotBlendSnapshotGlobal(gw);
-        if (cancelled || !snap) return;
-        if (!snapshotMatchesTeam(snap, currentTeamId)) return;
-        setCompletedBlendPayload(snap.result);
-        setSavedBlendInput(snap.input as CopilotBlendSubmitRequest);
-        setBlendApplyState({
-          phase: 'completed',
-          message: 'Loaded saved blend.',
-        });
-      } catch {
-        // Backend offline or not running — keep local state
-      }
-    }
-
-    void loadSnapshot();
-    return () => {
-      cancelled = true;
-    };
-  }, [teamId, nextGW]);
-
-  const hybridSummary = useMemo<CommandCenterAISummary>(() => {
-    if (!completedBlendPayload) {
-      return mockCommandCenterAISummary;
-    }
-
-    const ask = completedBlendPayload.ask_copilot;
-    const bulletTone = confidenceToTone(ask.confidence);
-    const rationaleText = ask.rationale.filter((item) => item.trim().length > 0);
-    const primaryText = (ask.answer?.trim() ?? '') || completedBlendPayload.core.summary;
-
-    const bullets = [
-      {
-        text: primaryText,
-        why: rationaleText.join(' ') || completedBlendPayload.core.summary,
-        tone: bulletTone,
-      },
-      ...rationaleText.slice(0, 4).map((item) => ({
-        text: item,
-        why: completedBlendPayload.core.summary,
-        tone: bulletTone,
-      })),
-    ];
-
-    return {
-      title: `AI Summary (GW ${nextGW || mockCommandCenterAISummary.gameweek})`,
-      gameweek: nextGW || mockCommandCenterAISummary.gameweek,
-      bullets: bullets.length > 0 ? bullets : mockCommandCenterAISummary.bullets,
-    };
-  }, [completedBlendPayload, nextGW]);
-
-  const hybridRecommendedTransfers = useMemo<RecommendedTransferItem[]>(() => {
-    if (!completedBlendPayload) {
-      return mockRecommendedTransfers;
-    }
-
-    const teamById = new Map((cc.bootstrap?.teams ?? []).map((team) => [team.id, team]));
-
-    const resolveFromCurrentData = (
-      playerId: number,
-      playerName: string,
-      fplApiId?: number,
-    ): EnhancedPlayer => {
-      const resolvedId = fplApiId ?? playerId;
-      const fromSquad = (fplApiId != null
-        ? currentSandboxSquad.find((player) => player.id === fplApiId)
-          ?? realSquad.find((player) => player.id === fplApiId)
-        : undefined)
-        ?? currentSandboxSquad.find((player) => player.id === playerId)
-        ?? realSquad.find((player) => player.id === playerId)
-        ?? currentSandboxSquad.find((player) => norm(player.name) === norm(playerName))
-        ?? realSquad.find((player) => norm(player.name) === norm(playerName));
-
-      if (fromSquad) {
-        return {
-          ...fromSquad,
-          id: resolvedId,
-          name: playerName,
-        };
-      }
-
-      const fromBootstrap = (fplApiId != null
-        ? (cc.bootstrap?.elements ?? []).find((element) => element.id === fplApiId)
-        : undefined)
-        ?? (cc.bootstrap?.elements ?? []).find((element) => element.id === playerId)
-        ?? (cc.bootstrap?.elements ?? []).find((element) => norm(element.web_name) === norm(playerName));
-
-      const bootstrapTeam = fromBootstrap ? teamById.get(fromBootstrap.team) : undefined;
-      const resolvedName = fromBootstrap?.web_name ?? playerName;
-      const teamAbbr = bootstrapTeam?.short_name ?? '';
-      const predictedXp = predictions.lookupPrediction(resolvedName, teamAbbr)?.xp ?? 0;
-
-      return {
-        id: resolvedId,
-        name: resolvedName,
-        position: fromBootstrap ? elementTypeToPosition(fromBootstrap.element_type) : 'MID',
-        team: bootstrapTeam?.name ?? '',
-        teamAbbr,
-        price: fromBootstrap ? Number(((fromBootstrap.now_cost ?? 0) / 10).toFixed(1)) : 0,
-        xPts: predictedXp,
-        points: 0,
-        minutesRisk: 'Unknown',
-        injuryStatus: 'Available',
-        opponents: [],
-      };
-    };
-
-    return completedBlendPayload.recommended_transfers.map((transfer) => {
-      const playerIn = resolveFromCurrentData(transfer.in.player_id, transfer.in.player_name, transfer.in.fpl_api_id);
-      const playerOut = resolveFromCurrentData(transfer.out.player_id, transfer.out.player_name, transfer.out.fpl_api_id);
-      const xPtsDelta = Number((playerIn.xPts - playerOut.xPts).toFixed(1));
-      return {
-        playerIn,
-        playerOut,
-        xPtsDelta,
-        why: transfer.reason,
-      };
-    });
-  }, [cc.bootstrap, completedBlendPayload, currentSandboxSquad, predictions, realSquad]);
-
-  // Sandbox handlers
-  const handleUndo = () => {
-    if (sandboxActions.length === 0) return;
-    const newActions = [...sandboxActions];
-    newActions.pop();
-    setSandboxActions(newActions);
-    // Recompute squad from actions
-    // TODO: implement proper undo logic
-  };
-
-  const handleReset = () => {
-    setSandboxSquad(realSquad.map((player) => ({ ...player })));
-    setSandboxActions([]);
-    setSandboxBankDelta(0);
-  };
-
-  const handleApplyToTeam = () => {
-    alert('Applied to team (UI only)');
-  };
-
-  const getBlendFailureState = useCallback((params: {
-    message: string;
-    retryable?: boolean;
-    error?: CopilotErrorResponse | null;
-    jobId?: string;
-  }): BlendApplyUiState => ({
-    phase: 'failed',
-    message: params.message,
-    retryable: params.retryable ?? true,
-    error: params.error ?? null,
-    jobId: params.jobId,
-  }), []);
-
-  const handleModelWeightChange = useCallback((modelId: string, nextWeight: number) => {
-    const boundedWeight = Math.max(0, Math.min(100, Math.round(nextWeight)));
-    setModelSources((prev) => prev.map((source) => (
-      source.id === modelId ? { ...source, weight: boundedWeight } : source
-    )));
-  }, []);
-
-  const applyModelBlend = useCallback(async () => {
-    if (isBlendInvalid) {
-      setBlendApplyState(getBlendFailureState({
-        message: 'Blend total exceeds 100%. Reduce source weights before applying.',
-        retryable: false,
-      }));
-      return;
-    }
-
-    const blendableSources = modelSources.filter((source) => source.backendField);
-    const totalWeight = blendableSources.reduce((sum, source) => sum + source.weight, 0);
-    if (totalWeight <= 0) {
-      setBlendApplyState(getBlendFailureState({
-        message: 'Set at least one source weight above 0 before applying.',
-        retryable: false,
-      }));
-      return;
-    }
-
-    // The backend requires source_weights to sum to exactly 1.0, but the UI
-    // allows any total up to 100 — normalise so the relative weights are kept
-    // regardless of how the sliders happen to add up.
-    const sourceWeights: Record<string, number> = {};
-    for (const source of blendableSources) {
-      if (!source.backendField) continue;
-      sourceWeights[source.backendField] = source.weight / totalWeight;
-    }
-
-    const sandboxTransferCount = sandboxActions.filter((action) => action.type === 'transfer').length;
-    const blendFreeTransfers = Math.max(0, teamStatus.freeTransfers - sandboxTransferCount);
-    const blendBank = Number((teamStatus.bank + sandboxBankDelta).toFixed(1));
-    const blendGameweek = nextGW > 0 ? nextGW : undefined;
-    const blendCurrentSquad = currentSandboxSquad.map((player) => ({
-      fpl_api_id: player.id,
-      player_name: player.name,
-      team: player.team,
-      position: player.position,
-      price: player.price,
-      x_pts: player.xPts,
-    }));
-
-    const runId = Date.now();
-    activeBlendPollRunRef.current = runId;
-    const isCurrentRun = () => activeBlendPollRunRef.current === runId;
-
-    setCompletedBlendPayload(null);
-    setSavedBlendInput(null);
-    setBlendApplyState({ phase: 'submitting', message: 'Submitting blend request...' });
-
-    try {
-      const correlationId = createCorrelationId();
-      const parsedTeamId = teamId?.trim() ? Number.parseInt(teamId.trim(), 10) : undefined;
-      const fplTeamId =
-        parsedTeamId != null && Number.isFinite(parsedTeamId) && parsedTeamId > 0
-          ? parsedTeamId
-          : undefined;
-
-      const blendRequestBody: CopilotBlendSubmitRequest = {
-        schema_version: BLEND_SCHEMA_VERSION,
-        correlation_id: correlationId,
-        source_weights: sourceWeights as unknown as CopilotSourceWeights,
-        gameweek: blendGameweek,
-        bank: blendBank,
-        free_transfers: blendFreeTransfers,
-        current_squad: blendCurrentSquad,
-        task: 'hybrid',
-        force_refresh: true,
-        ...(fplTeamId != null ? { fpl_team_id: fplTeamId } : {}),
-      };
-
-      const accepted = await submitCopilotBlendJob(blendRequestBody);
-
-      if (!isCurrentRun()) {
-        return;
-      }
-
-      setBlendApplyState({
-        phase: 'queued',
-        jobId: accepted.job_id,
-        message: 'Blend job queued...',
-      });
-
-      const startedAt = Date.now();
-      let latestStatus: CopilotBlendJobStatusResponse | null = null;
-
-      while (isCurrentRun()) {
-        latestStatus = await pollCopilotBlendJob(accepted.job_id);
-        if (!isCurrentRun()) {
-          return;
-        }
-
-        if (latestStatus.status === 'queued') {
-          setBlendApplyState({
-            phase: 'queued',
-            jobId: accepted.job_id,
-            message: 'Blend job queued...',
-          });
-        }
-
-        if (latestStatus.status === 'running') {
-          setBlendApplyState({
-            phase: 'running',
-            jobId: accepted.job_id,
-            message: 'Generating hybrid model output...',
-          });
-        }
-
-        if (latestStatus.status === 'completed') {
-          const resultPayload = latestStatus.result;
-          if (!resultPayload) {
-            setBlendApplyState(getBlendFailureState({
-              message: 'Blend job completed without result payload.',
-              retryable: true,
-              jobId: accepted.job_id,
-            }));
-            return;
-          }
-
-          setCompletedBlendPayload(resultPayload);
-          setSavedBlendInput(blendRequestBody);
-          setBlendApplyState({
-            phase: 'completed',
-            jobId: accepted.job_id,
-            message: resultPayload.degraded_mode.is_degraded
-              ? 'Blend applied with degraded fallback output.'
-              : 'Blend applied successfully.',
-          });
-          return;
-        }
-
-        if (latestStatus.status === 'failed') {
-          const backendError = latestStatus.error;
-          const message = backendError?.error.message ?? 'Blend job failed on backend.';
-          setBlendApplyState(getBlendFailureState({
-            message,
-            retryable: backendError?.error.retryable ?? true,
-            error: backendError,
-            jobId: accepted.job_id,
-          }));
-          return;
-        }
-
-        if (Date.now() - startedAt > BLEND_POLL_TIMEOUT_MS) {
-          setBlendApplyState(getBlendFailureState({
-            message: 'Blend job timed out while polling. Retry to continue.',
-            retryable: true,
-            jobId: accepted.job_id,
-          }));
-          return;
-        }
-
-        await sleep(BLEND_POLL_INTERVAL_MS);
-      }
-    } catch (error) {
-      if (!isCurrentRun()) {
-        return;
-      }
-
-      if (isApiError(error)) {
-        setBlendApplyState(getBlendFailureState({
-          message: error.message,
-          retryable: error.status === 0 || error.status >= 500,
-        }));
-        return;
-      }
-
-      setBlendApplyState(getBlendFailureState({
-        message: error instanceof Error ? error.message : 'Blend apply failed unexpectedly.',
-        retryable: true,
-      }));
-    }
-  }, [currentSandboxSquad, getBlendFailureState, isBlendInvalid, modelSources, nextGW, sandboxActions, sandboxBankDelta, teamId, teamStatus.bank, teamStatus.freeTransfers]);
-
-  function handleRefreshAISummary() {
-    if (isBlendInvalid) {
-      toast.warning('Blend weights invalid', {
-        description: 'Total exceeds 100%. Open AI Sandbox and reduce source weights before refreshing.',
-        duration: 6000,
-      });
-      return;
-    }
-    if (nextGW <= 0) {
-      toast.warning('Gameweek not ready', {
-        description: 'Wait for team data to load, then try again.',
-        duration: 5000,
-      });
-      return;
-    }
-    void applyModelBlend();
+function parseWeights(raw: string | null) {
+  const out = { ...DEFAULT_WEIGHTS };
+  if (!raw) return out;
+  for (const pair of raw.split(',')) {
+    const [k, v] = pair.split(':');
+    if (k in out && Number.isFinite(Number(v))) out[k as keyof typeof out] = clamp(Number(v), 0, 100);
   }
+  return out;
+}
 
-  const blendJobBusy =
-    blendApplyState.phase === 'submitting' ||
-    blendApplyState.phase === 'queued' ||
-    blendApplyState.phase === 'running';
+export default function CommandCenterPage() {
+  const core = useCore();
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'sandbox' ? 'sandbox' : 'pick';
 
-  useEffect(() => () => {
-    activeBlendPollRunRef.current = 0;
-  }, []);
-
-  const handleTransfer = (playerInId: number, playerOutId: number) => {
-    const sourceSquad = currentSandboxSquad;
-    const action: SandboxAction = {
-      type: 'transfer',
-      payload: { playerInId, playerOutId },
-      timestamp: new Date(),
-    };
-
-    let inPlayer: EnhancedPlayer | undefined = realSquad.find((p) => p.id === playerInId);
-
-    if (!inPlayer) {
-      const el = bootstrapElements.find((e) => e.id === playerInId);
-      if (el) {
-        const team = cc.bootstrap?.teams.find((t) => t.id === el.team);
-        const pred = predictions.lookupPrediction(el.web_name, team?.short_name);
-        const fixture = predictions.fixturesByName.get(norm(el.web_name));
-        inPlayer = {
-          id: el.id,
-          name: el.web_name,
-          position: elementTypeToPosition(el.element_type),
-          team: team?.name ?? '',
-          teamAbbr: team?.short_name ?? '',
-          price: el.now_cost ? el.now_cost / 10 : 0,
-          xPts: pred?.xp ?? 0,
-          points: 0,
-          minutesRisk: 'Unknown',
-          injuryStatus: 'Available',
-          photoUrl: getPlayerPhotoUrl(el.code),
-          opponents: fixture?.fixtures?.map((f) => `${f.is_home ? 'H' : 'A'} ${f.opponent_short}`) ?? [],
-        };
-      }
-    }
-
-    if (!inPlayer) return;
-
-    const outPlayer = sourceSquad.find((p) => p.id === playerOutId);
-    const outPrice = outPlayer?.price ?? 0;
-    const inPrice = inPlayer.price ?? 0;
-    const priceDelta = outPrice - inPrice;
-
-    const newActions = [...sandboxActions, action];
-    const transfersMade = newActions.filter((a) => a.type === 'transfer').length;
-    const freeTransfers = teamStatus.freeTransfers;
-    const newBank = teamStatus.bank + sandboxBankDelta + priceDelta;
-
-    if (newBank < 0) {
-      toast.error('Insufficient funds', {
-        description: `This transfer would leave you with £${newBank.toFixed(1)}m. You need more bank.`,
-        duration: 4000,
-      });
-      return;
-    }
-
-    setSandboxBankDelta((prev) => Number((prev + priceDelta).toFixed(1)));
-    setSandboxActions(newActions);
-    setSandboxSquad(() => {
-      const outIdx = sourceSquad.findIndex((p) => p.id === playerOutId);
-      if (outIdx === -1) return sourceSquad;
-      const out = sourceSquad[outIdx];
-      const next = sourceSquad.slice();
-      next[outIdx] = { ...inPlayer, isBench: out.isBench, isCaptain: false, isViceCaptain: false };
-      return next;
-    });
-
-    const hitMsg = transfersMade > freeTransfers
-      ? ` (−${(transfersMade - freeTransfers) * 4} pts hit)`
-      : '';
-
-    const desc = `${outPlayer?.name ?? 'Player'} out → ${inPlayer.name} in${hitMsg}`;
-    if (transfersMade > freeTransfers) {
-      toast.warning('Transfer applied', { description: desc, duration: 4000 });
-    } else {
-      toast.success('Transfer applied', { description: desc, duration: 4000 });
-    }
-  };
-
-  const handleSetCaptain = (playerId: number) => {
-    const newSquad = currentSandboxSquad.map((p) => {
-      if (p.id === playerId) {
-        return { ...p, isCaptain: true, isViceCaptain: false };
-      } else if (p.isCaptain) {
-        return { ...p, isCaptain: false, isViceCaptain: true };
-      } else {
-        return { ...p, isViceCaptain: false };
-      }
-    });
-    setSandboxSquad(newSquad);
-    setSandboxActions((prev) => [...prev, { type: 'captain', payload: { playerId }, timestamp: new Date() }]);
-  };
-
-  const handleSetViceCaptain = (playerId: number) => {
-    const player = currentSandboxSquad.find((p) => p.id === playerId);
-    if (!player || player.isBench) return;
-    if (player.isCaptain) {
-      toast.info('Cannot assign', { description: 'The captain cannot also be vice-captain.', duration: 3000 });
-      return;
-    }
-    const newSquad = currentSandboxSquad.map((p) => {
-      if (p.id === playerId) return { ...p, isViceCaptain: true, isCaptain: false };
-      return { ...p, isViceCaptain: false };
-    });
-    setSandboxSquad(newSquad);
-    setSandboxActions((prev) => [...prev, { type: 'vice_captain', payload: { playerId }, timestamp: new Date() }]);
-  };
-
-  const handleAutoCaptain = () => {
-    const starters = currentSandboxSquad.filter((p) => !p.isBench);
-    if (starters.length === 0) return;
-    const best = starters.reduce((a, b) => (a.xPts > b.xPts ? a : b));
-    handleSetCaptain(best.id);
-  };
-
-  const handleAutoBench = () => {
-    // Simple heuristic: sort by xPts, put lowest on bench
-    // TODO: implement proper bench logic
-    alert('Auto-bench feature coming soon');
-  };
-
-  const handleRollTransfer = () => {
-    setActiveTab('sandbox');
-  };
-
-  const handleSandboxPlayerClick = useCallback(
-    (player: import('../data/gwOverviewMocks').Player) => {
-      const clickedId = player.id;
-      if (clickedId == null) return;
-
-      if (swapSelection == null) {
-        setSwapSelection(clickedId);
-        return;
-      }
-
-      if (swapSelection === clickedId) {
-        setSwapSelection(null);
-        return;
-      }
-
-      const squad = [...currentSandboxSquad];
-      const idxA = squad.findIndex((p) => p.id === swapSelection);
-      const idxB = squad.findIndex((p) => p.id === clickedId);
-      if (idxA === -1 || idxB === -1) {
-        setSwapSelection(null);
-        return;
-      }
-
-      const a = { ...squad[idxA] };
-      const b = { ...squad[idxB] };
-
-      if (a.isBench === b.isBench) {
-        toast.info('Invalid swap', {
-          description: 'Select one starter and one bench player to swap.',
-          duration: 3000,
-        });
-        setSwapSelection(null);
-        return;
-      }
-
-      // Simulate the swap and validate the resulting formation
-      const tmpBench = a.isBench;
-      a.isBench = b.isBench;
-      b.isBench = tmpBench;
-      if (a.isBench) { a.isCaptain = false; a.isViceCaptain = false; }
-      if (b.isBench) { b.isCaptain = false; b.isViceCaptain = false; }
-
-      const simulated = squad.slice();
-      simulated[idxA] = a;
-      simulated[idxB] = b;
-
-      const err = validateFormation(simulated);
-      if (err) {
-        toast.warning('Invalid formation', {
-          description: err,
-          duration: 4000,
-        });
-        setSwapSelection(null);
-        return;
-      }
-
-      setSandboxSquad(simulated);
-      setSandboxActions((prev) => [
-        ...prev,
-        { type: 'bench_order', payload: { playerA: swapSelection, playerB: clickedId }, timestamp: new Date() },
-      ]);
-      setSwapSelection(null);
-    },
-    [swapSelection, currentSandboxSquad],
-  );
-
-  const handleOpenOptimizationDialog = useCallback(() => {
-    setWeeksAhead(3);
-    setOptimizationDialogOpen(true);
-  }, []);
-
-  const handleConfirmOptimization = useCallback(async () => {
-    const idStr = teamId?.trim();
-    const fplTeamId = idStr ? Number.parseInt(idStr, 10) : Number.NaN;
-    if (idStr == null || idStr === "" || !Number.isFinite(fplTeamId) || fplTeamId <= 0) {
-      toast.warning('FPL team ID required', {
-        description: 'Set your team ID in the app (navbar) so the optimizer knows which squad to run for.',
-        duration: 6000,
-      });
-      return;
-    }
-
-    const w = clampWeeksAhead(weeksAhead);
-    setOptimizationLoading(true);
-    try {
-      const res = await runAirsenal({
-        action: 'pipeline',
-        fpl_team_id: fplTeamId,
-        gameweek: 'auto',
-        weeks_ahead: w,
-      });
-      setOptimizationDialogOpen(false);
-      const desc = res.ok
-        ? `Action “${res.action}” completed (${res.steps?.length ?? 0} step(s)).`
-        : `Completed with ok: false for “${res.action}”.`;
-      if (res.ok) {
-        toast.success('AIrsenal pipeline finished', { description: desc, duration: 8000 });
-        window.setTimeout(() => window.location.reload(), 2000);
-      } else {
-        toast.warning('AIrsenal pipeline finished', { description: desc, duration: 8000 });
-      }
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Request failed';
-      toast.error('AIrsenal run failed', {
-        description: message,
-        duration: 12000,
-      });
-    } finally {
-      setOptimizationLoading(false);
-    }
-  }, [teamId, weeksAhead]);
-
-  const mappedPickTeamSquad = currentSandboxSquad.map((p) => {
-    const fixture = predictions.fixturesByName.get(norm(p.name));
-    const firstFixture = fixture?.fixtures?.[0];
-
-    let chipLabel: string | undefined;
-    let chipDifficulty: number | undefined;
-
-    if (firstFixture) {
-      chipDifficulty = getOpponentDifficulty(firstFixture.opponent_short, firstFixture.difficulty);
-      chipLabel = `${firstFixture.is_home ? 'H' : 'A'} ${firstFixture.opponent_short}`;
-    } else if (p.opponents && p.opponents.length > 0) {
-      chipLabel = p.opponents.join(', ');
-      const firstOpponent = p.opponents[0] ?? '';
-      const opponentShort = firstOpponent.replace(/^H\s+|^A\s+/i, '').trim();
-      if (opponentShort) {
-        chipDifficulty = getOpponentDifficulty(opponentShort);
-      }
-    } else {
-      chipLabel = p.teamAbbr || undefined;
-    }
-
-    const pred = predictions.lookupPrediction(p.name, p.teamAbbr);
-    const displayPoints = pred?.xp ?? p.xPts ?? 0;
-    const roundedPoints = Number(displayPoints.toFixed(2));
-
-    return {
-      id: p.id,
-      name: p.name,
-      position: p.position,
-      points: roundedPoints,
-      isCaptain: p.isCaptain,
-      isViceCaptain: p.isViceCaptain,
-      isBench: p.isBench,
-      photoUrl: p.photoUrl,
-      teamAbbr: p.teamAbbr,
-      chipLabel,
-      chipDifficulty,
-    };
-  });
-
-  const mappedSandboxSquad = currentSandboxSquad.map((p) => {
-    const fixture = predictions.fixturesByName.get(norm(p.name));
-    const firstFixture = fixture?.fixtures?.[0];
-
-    let chipLabel: string | undefined;
-    let chipDifficulty: number | undefined;
-
-    if (firstFixture) {
-      chipDifficulty = getOpponentDifficulty(firstFixture.opponent_short, firstFixture.difficulty);
-      chipLabel = `${firstFixture.is_home ? 'H' : 'A'} ${firstFixture.opponent_short}`;
-    } else if (p.opponents && p.opponents.length > 0) {
-      chipLabel = p.opponents.join(', ');
-      const opponentShort = (p.opponents[0] ?? '').replace(/^[HA]\s+/i, '').trim();
-      if (opponentShort) chipDifficulty = getOpponentDifficulty(opponentShort);
-    } else {
-      chipLabel = p.teamAbbr || undefined;
-    }
-
-    const pred = predictions.lookupPrediction(p.name, p.teamAbbr);
-    const displayPoints = pred?.xp ?? p.xPts ?? 0;
-
-    return {
-      id: p.id,
-      name: p.name,
-      position: p.position,
-      points: Number(displayPoints.toFixed(2)),
-      isCaptain: p.isCaptain,
-      isViceCaptain: p.isViceCaptain,
-      isBench: p.isBench,
-      photoUrl: p.photoUrl,
-      teamAbbr: p.teamAbbr,
-      chipLabel,
-      chipDifficulty,
-    };
-  });
-
-  const loadingCard = (
-    <DashboardCard className="p-6">
-      <p className="text-center text-slate-400">Loading squad...</p>
-    </DashboardCard>
-  );
-
-  const errorCard = (
-    <DashboardCard className="p-6 bg-[rgba(127,29,29,0.18)] border-[rgba(248,113,113,0.22)]">
-      <p className="text-center text-red-300">{cc.error}</p>
-    </DashboardCard>
-  );
-
-  const emptyMyTeamCard = (
-    <DashboardCard className="p-6">
-      <div className="flex flex-col items-center gap-2">
-        <p className="text-center font-semibold text-slate-300">No backend my_team.json squad loaded</p>
-        <p className="text-center text-sm text-slate-500">
-          Command Center is waiting for `/api/files/my_team` so it can render your real draft, bank, transfers, and chips.
-        </p>
-      </div>
-    </DashboardCard>
-  );
+  const [dismissedBanner, setDismissedBanner] = useState(false);
 
   return (
-    <div className="flex flex-1 flex-col gap-6 px-4 py-6 md:px-6 xl:px-10 xl:py-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold leading-[1.33] text-white">Command Center</h1>
-        <p className="text-sm text-slate-400">
-          Gameweek {nextGW || '…'} • Team: {teamName} • ID: {teamId}
-        </p>
+    <div className="od-stack page-enter" style={{ gap: 20 }}>
+      <div className="od-row" style={{ gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div className="tiny faint" style={{ textTransform: 'uppercase', letterSpacing: '.14em' }}>
+            Plan
+          </div>
+          <h2>Command Center</h2>
+          <div className="small muted">
+            Gameweek {core.nextGW} • {core.manager?.name ?? core.entry?.name ?? '—'} • ID{' '}
+            {core.manager?.teamId ?? '—'}
+          </div>
+        </div>
+        <span className="spacer" />
+        <OptimizeButton />
       </div>
 
-      <StatusStrip status={teamStatus} />
-
-      <SeasonStatusBanner />
-
-      <DashboardCard>
-        <div className="flex border-b border-white/6">
-          {(['pick-team', 'sandbox'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                'flex-1 cursor-pointer rounded-none border-b-2 px-4 py-3 text-sm font-semibold capitalize transition-colors',
-                activeTab === tab ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400',
-                'hover:bg-transparent hover:text-white',
-              )}
-            >
-              {tab === 'pick-team' ? `Pick Team (GW ${nextGW || '…'})` : 'AI Sandbox'}
+      {core.seasonStatus && !core.seasonStatus.is_current && !dismissedBanner ? (
+        <Alert
+          tone="warn"
+          icon="alert"
+          actions={
+            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setDismissedBanner(true)}>
+              Dismiss
             </button>
-          ))}
-        </div>
-
-        <div className="p-4 md:p-6">
-          {activeTab === 'pick-team' ? (
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-              <div className="col-span-1 xl:col-span-2">
-                <div className="flex flex-col gap-6">
-                  {cc.loading ? loadingCard : !hasLiveMyTeam ? (cc.error ? errorCard : emptyMyTeamCard) : (
-                    <PitchCard
-                      squad={mappedPickTeamSquad}
-                      onPlayerClick={(player) => {
-                        const id = player?.id;
-                        if (id == null || typeof id !== 'number' || Number.isNaN(id) || id <= 0) return;
-                        navigate(`/players/${id}`, { state: { from: location.pathname } });
-                      }}
-                    />
-                  )}
-                  <AICommandSummary
-                    summary={hybridSummary}
-                    onRefresh={handleRefreshAISummary}
-                    isRefreshing={blendJobBusy}
-                    disableRefresh={isBlendInvalid || nextGW <= 0}
-                  />
-                </div>
-              </div>
-
-              <div className="col-span-1">
-                <div className="flex flex-col gap-6">
-                  <QuickActions
-                    onAutoCaptain={handleAutoCaptain}
-                    onAutoBench={handleAutoBench}
-                    onOpenOptimization={handleOpenOptimizationDialog}
-                    onRollTransfer={handleRollTransfer}
-                    isOptimizationLoading={optimizationLoading}
-                  />
-                  <InFormCard bootstrapElements={bootstrapElements} />
-                  <BandwagonsCard bootstrapElements={bootstrapElements} />
-                  <InjuriesSuspensionsCard />
-                  <FixturesSnapshot fixtures={mockFixturesSnapshot} />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-6">
-              <SandboxControls
-                sandboxMode={sandboxMode}
-                onToggleSandboxMode={() => setSandboxMode(!sandboxMode)}
-                onUndo={handleUndo}
-                onReset={handleReset}
-                onApply={handleApplyToTeam}
-                canUndo={sandboxActions.length > 0}
-              />
-
-              <DeltaStrip
-                realSquad={realSquad}
-                sandboxSquad={currentSandboxSquad}
-                bank={teamStatus.bank}
-                bankDelta={sandboxBankDelta}
-                freeTransfers={teamStatus.freeTransfers}
-                sandboxTransfersMade={sandboxActions.filter((a) => a.type === 'transfer').length}
-              />
-
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <div className="col-span-1 xl:col-span-2">
-                  <div className="flex flex-col gap-6">
-                    <RecommendedTransfersList
-                      transfers={hybridRecommendedTransfers}
-                      onApplyTransfer={handleTransfer}
-                    />
-                    <CustomTransferBuilder
-                      squad={currentSandboxSquad}
-                      bootstrapElements={bootstrapElements}
-                      bootstrapTeams={cc.bootstrap?.teams ?? []}
-                      lookupPrediction={predictions.lookupPrediction}
-                      fixturesByName={predictions.fixturesByName}
-                      onTransfer={handleTransfer}
-                    />
-                    {cc.loading ? loadingCard : !hasLiveMyTeam ? (cc.error ? errorCard : emptyMyTeamCard) : (
-                      <PitchCard
-                        squad={mappedSandboxSquad}
-                        onPlayerClick={handleSandboxPlayerClick}
-                        selectedPlayerId={swapSelection}
-                        swapHint="Tap another player to swap (bench ↔ starting XI)"
-                        onSetCaptain={(p) => {
-                          if (p.id == null) return;
-                          handleSetCaptain(p.id);
-                        }}
-                        onSetViceCaptain={(p) => {
-                          if (p.id == null) return;
-                          handleSetViceCaptain(p.id);
-                        }}
-                      />
-                    )}
-                    <SandboxCharts squad={currentSandboxSquad} />
-                  </div>
-                </div>
-
-                <div className="col-span-1">
-                  <div className="flex flex-col gap-6">
-                    <ModelComparisonPanel
-                      models={modelSources}
-                      blendTotal={blendTotal}
-                      blendRemaining={blendRemaining}
-                      isBlendInvalid={isBlendInvalid}
-                      onModelWeightChange={handleModelWeightChange}
-                      applyStatus={blendApplyState.phase}
-                      statusMessage={blendStatusMessage}
-                      canRetry={blendApplyState.retryable}
-                      onApply={() => {
-                        void applyModelBlend();
-                      }}
-                    />
-                    <AskCopilotChat
-                      hybridPayload={completedBlendPayload}
-                      blendInput={savedBlendInput}
-                      applyPhase={blendApplyState.phase}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </DashboardCard>
-
-      <VideoInsightsStrip videos={mockVideoInsights} />
-
-      <Dialog
-        open={optimizationDialogOpen}
-        onOpenChange={(open) => {
-          if (!open && !optimizationLoading) setOptimizationDialogOpen(false);
-        }}
-      >
-        <DialogContent
-          overlayClassName="bg-black/70 backdrop-blur-[4px]"
-          className="max-w-[calc(100%-2rem)] gap-0 rounded-lg border border-white/8 bg-slate-900 p-0 sm:max-w-md"
-          onInteractOutside={(e) => {
-            if (optimizationLoading) e.preventDefault();
-          }}
-          onEscapeKeyDown={(e) => {
-            if (optimizationLoading) e.preventDefault();
-          }}
+          }
         >
-          <DialogHeader className="gap-0 border-b border-white/6 px-6 py-4">
-            <DialogTitle className="text-base text-white">Run AIrsenal pipeline</DialogTitle>
-          </DialogHeader>
-          <div className="px-6 py-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-slate-300">Weeks ahead</label>
-              <div className="relative w-[140px]">
-                <input
-                  type="number"
-                  min={1}
-                  max={38}
-                  value={weeksAhead}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    if (Number.isNaN(n)) return;
-                    setWeeksAhead(clampWeeksAhead(n));
-                  }}
-                  onBlur={() => setWeeksAhead(clampWeeksAhead(weeksAhead))}
-                  disabled={optimizationLoading}
-                  className="h-8 w-full rounded-md border border-white/8 bg-white/4 px-2 pr-6 text-sm text-white transition-colors hover:border-white/12 focus-visible:border-emerald-400 focus-visible:shadow-[0_0_0_1px_#34d399] focus-visible:outline-none disabled:opacity-50"
-                />
-                <div className="absolute inset-y-0 right-0 flex w-5 flex-col overflow-hidden rounded-r-md border-l border-white/8">
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    aria-label="Increase"
-                    disabled={optimizationLoading}
-                    onClick={() => setWeeksAhead(clampWeeksAhead(weeksAhead + 1))}
-                    className="flex flex-1 cursor-pointer items-center justify-center border-b border-white/8 text-slate-300 hover:bg-white/6 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <ChevronUp size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    aria-label="Decrease"
-                    disabled={optimizationLoading}
-                    onClick={() => setWeeksAhead(clampWeeksAhead(weeksAhead - 1))}
-                    className="flex flex-1 cursor-pointer items-center justify-center text-slate-300 hover:bg-white/6 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <ChevronDown size={12} />
-                  </button>
-                </div>
-              </div>
-              <p className="text-xs text-slate-500">
-                Planning horizon for the run (1–38). Default is 3. Runs update DB →
-                predict → optimize → export, so it can take several minutes.
-              </p>
-            </div>
+          <b>Some pricing data may be stale.</b>
+          <div className="small">
+            Live season is {core.seasonStatus.fpl_season ?? 'unknown'} but local exports are{' '}
+            {core.seasonStatus.data_season ?? 'unknown'}. Projections still run, but transfer prices may shift
+            before the deadline.
           </div>
-          <DialogFooter className="gap-2 border-t border-white/6 bg-transparent">
-            <button
-              type="button"
-              className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'text-slate-400')}
-              onClick={() => setOptimizationDialogOpen(false)}
-              disabled={optimizationLoading}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className={cn(buttonVariants({ size: 'sm' }), 'bg-blue-500 hover:bg-blue-600')}
-              onClick={() => void handleConfirmOptimization()}
-              disabled={optimizationLoading}
-            >
-              {optimizationLoading ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Running…
-                </>
-              ) : (
-                'Run pipeline'
-              )}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </Alert>
+      ) : null}
+
+      <StatusStrip />
+
+      <div className="tabs" role="tablist" aria-label="Command Center sections">
+        <button
+          className="tab"
+          role="tab"
+          aria-selected={tab === 'pick'}
+          onClick={() => setParams({ tab: 'pick' })}
+        >
+          <Icon name="crown" size={14} /> Pick Team
+        </button>
+        <button
+          className="tab"
+          role="tab"
+          aria-selected={tab === 'sandbox'}
+          onClick={() => setParams({ tab: 'sandbox' })}
+        >
+          <Icon name="sliders" size={14} /> AI Sandbox
+        </button>
+      </div>
+
+      {core.loading ? (
+        <Card>
+          <SkeletonLines count={10} />
+        </Card>
+      ) : tab === 'pick' ? (
+        <PickTeamTab />
+      ) : (
+        <SandboxTab weights={parseWeights(params.get('w'))} />
+      )}
     </div>
   );
-};
+}
 
-export default CommandCenterPage;
+/* ------------------------------------------------------------------ status */
+
+function StatusStrip() {
+  const core = useCore();
+  const manager = core.manager;
+  const usedChips = manager?.chips.filter((c) => c.used).length ?? 0;
+
+  return (
+    <Card reveal>
+      <div className="od-row" style={{ gap: 20, flexWrap: 'wrap' }}>
+        <div className="od-stack" style={{ gap: 6 }}>
+          <span className="tiny faint" style={{ textTransform: 'uppercase', letterSpacing: '.14em' }}>
+            Chips
+          </span>
+          <div className="od-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            {(manager?.chips ?? []).map((c) => (
+              <span className="tooltip-host" key={c.key}>
+                <span className="badge" style={{ opacity: c.used ? 0.6 : undefined, color: c.used ? undefined : 'var(--accent)', borderColor: c.used ? undefined : 'color-mix(in srgb, var(--accent) 40%, transparent)' }}>
+                  <Icon name={c.used ? 'lock' : 'check'} size={12} /> {c.name}
+                  {c.used ? ` · GW${c.usedGw ?? ''}` : ''}
+                </span>
+                <span className="tip">
+                  <b>{c.name}</b>
+                  <br />
+                  {c.note}
+                  <br />
+                  {c.used ? `Used in GW${c.usedGw ?? '?'}` : 'Available'}
+                </span>
+              </span>
+            ))}
+            {usedChips ? <Badge>{usedChips}/4 chips used</Badge> : null}
+          </div>
+        </div>
+        <span className="spacer" />
+        <div className="od-row" style={{ gap: 24, flexWrap: 'wrap' }}>
+          <div className="od-stat">
+            <span className="k tiny faint">Free transfers</span>
+            <span className="v mono" style={{ fontSize: 'var(--fs-xl)' }}>
+              {manager?.freeTransfers ?? '—'}
+            </span>
+          </div>
+          <div className="od-stat">
+            <span className="k tiny faint">Bank</span>
+            <span className="v mono" style={{ fontSize: 'var(--fs-xl)' }}>
+              {money(manager?.bank ?? 0)}
+            </span>
+          </div>
+          <div className="od-stat">
+            <span className="k tiny faint">Squad value</span>
+            <span className="v mono" style={{ fontSize: 'var(--fs-xl)' }}>
+              {money(manager?.squadValue ?? 0)}
+            </span>
+          </div>
+          <div className="od-stat">
+            <span className="k tiny faint">Deadline in</span>
+            <span className="v mono" style={{ fontSize: 'var(--fs-xl)' }}>
+              <Countdown target={core.nextDeadline} />
+            </span>
+            <span className="tiny muted">GW{core.nextGW}</span>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------- pick team */
+
+function PickTeamTab() {
+  const core = useCore();
+  const { xi, bench, captainId, viceId, byId, quickCaptain, quickBench, autoPickXi } = useSquad();
+  const toast = useToast();
+  const [, setParams] = useSearchParams();
+  const [dialogPlayer, setDialogPlayer] = useState<Player | null>(null);
+
+  const fixtureOf = (p: Player) => {
+    if (!core.fixtureIndex) return null;
+    return nextFixtures(core.fixtureIndex, p.teamId, core.nextGW, 1)[0] ?? null;
+  };
+
+  const inForm = core.players
+    .filter((p) => p.last4)
+    .sort((a, b) => (b.last4?.points ?? 0) - (a.last4?.points ?? 0))
+    .slice(0, 5);
+
+  const bandwagons = [...core.players].sort((a, b) => b.transfersNet - a.transfersNet).slice(0, 5);
+
+  return (
+    <div className="cols-3">
+      <div className="od-stack" style={{ gap: 16 }}>
+        <Card
+          reveal
+          title={`Starting XI · GW${core.nextGW}`}
+          actions={
+            <>
+              <Badge className="mono">{num(xiXpts(xi, byId, captainId), 1)} xPts</Badge>
+              <Badge tone="info">
+                <Icon name="cpu" size={12} /> Copilot
+              </Badge>
+            </>
+          }
+        >
+          <Pitch
+            ids={xi}
+            byId={byId}
+            captainId={captainId}
+            viceId={viceId}
+            fixtureOf={fixtureOf}
+            onChipClick={setDialogPlayer}
+          />
+          <BenchRow
+            ids={bench}
+            byId={byId}
+            captainId={captainId}
+            viceId={viceId}
+            fixtureOf={fixtureOf}
+            onChipClick={setDialogPlayer}
+          />
+        </Card>
+
+        <div className="grid grid-2">
+          <Card reveal title="Quick actions">
+            <div className="od-stack" style={{ gap: 10 }}>
+              <QuickAction
+                icon="crown"
+                label="Auto-pick captain"
+                desc="Highest projected xPts"
+                onClick={() => {
+                  quickCaptain();
+                  toast('Captain auto-picked by projected xPts.');
+                }}
+              />
+              <QuickAction
+                icon="check"
+                label="Auto-pick best XI"
+                desc="Highest projected legal lineup"
+                onClick={() => {
+                  autoPickXi();
+                  toast('Best starting XI selected by projected xPts.');
+                }}
+              />
+              <QuickAction
+                icon="swap"
+                label="Auto-pick bench order"
+                desc="By next-GW xPts"
+                onClick={() => {
+                  quickBench();
+                  toast('Bench order re-ordered by projected xPts.');
+                }}
+              />
+              <OptimizeButton variant="quick" />
+              <QuickAction
+                icon="sliders"
+                label="Open the Sandbox"
+                desc="Plan transfers as a what-if"
+                onClick={() => setParams({ tab: 'sandbox' })}
+              />
+            </div>
+          </Card>
+
+          <Card reveal title="In form" actions={<Badge>Last 4 GWs</Badge>}>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Player</th>
+                    <th>Pts</th>
+                    <th>Mins</th>
+                    <th>xGI</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inForm.map((p) => (
+                    <tr key={p.id} className="clickable" onClick={() => setDialogPlayer(p)}>
+                      <td>
+                        <div className="cell-player">
+                          <Avatar player={p} size={26} />
+                          <Crest club={p.club} size={18} />
+                          <div className="nm small">{p.name}</div>
+                        </div>
+                      </td>
+                      <td className="mono pos">{p.last4?.points ?? 0}</td>
+                      <td className="mono">{p.last4?.minutes ?? 0}</td>
+                      <td className="mono">{p.last4?.xgi.toFixed(1) ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+
+        <AiSummaryCard title="AI Command Summary" />
+        <BandwagonsCard bandwagons={bandwagons} onOpen={setDialogPlayer} />
+      </div>
+
+      <div className="od-stack" style={{ gap: 16 }}>
+        <FixturesSnapshotCard teamIds={xi.map((id) => byId.get(id)?.teamId ?? 0)} gw={core.nextGW} />
+        <InjuriesCard />
+      </div>
+
+      {dialogPlayer ? <PlayerActionDialog player={dialogPlayer} onClose={() => setDialogPlayer(null)} /> : null}
+    </div>
+  );
+}
+
+function QuickAction({
+  icon,
+  label,
+  desc,
+  onClick,
+}: {
+  icon: Parameters<typeof Icon>[0]['name'];
+  label: string;
+  desc: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className="btn btn-ghost" style={{ justifyContent: 'flex-start', textAlign: 'left' }} type="button" onClick={onClick}>
+      <Icon name={icon} size={16} />
+      <span className="od-stack" style={{ gap: 0, alignItems: 'flex-start' }}>
+        <span>{label}</span>
+        <span className="tiny faint" style={{ fontWeight: 400 }}>
+          {desc}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function BandwagonsCard({ bandwagons, onOpen }: { bandwagons: Player[]; onOpen: (p: Player) => void }) {
+  return (
+    <Card reveal title="Bandwagons" actions={<Badge>Most transferred</Badge>}>
+      <div className="od-stack" style={{ gap: 12 }}>
+        {bandwagons.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onOpen(p)}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '28px 20px minmax(0,1fr) auto auto',
+              alignItems: 'center',
+              gap: 12,
+              width: '100%',
+              textAlign: 'left',
+              background: 'transparent',
+              border: 0,
+              cursor: 'pointer',
+              padding: '8px 0',
+            }}
+          >
+            <Avatar player={p} size={28} />
+            <Crest club={p.club} size={20} />
+            <div style={{ minWidth: 0 }}>
+              <div className="small" style={{ fontWeight: 600 }}>
+                {p.name}
+              </div>
+              <div className="tiny faint">
+                {p.club.short} · {money(p.price)}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gap: 2, textAlign: 'right', minWidth: 58 }}>
+              <span className="tiny pos mono">
+                <Icon name="arrowUp" size={11} /> {compactCount(p.transfersIn)}
+              </span>
+              <span className="tiny neg mono">
+                <Icon name="arrowDown" size={11} /> {compactCount(p.transfersOut)}
+              </span>
+            </div>
+            <span
+              className={`badge ${p.transfersNet >= 0 ? 'pos' : 'neg'} mono`}
+              style={{ minWidth: 66, justifyContent: 'center' }}
+            >
+              {p.transfersNet >= 0 ? '+' : ''}
+              {compactCount(p.transfersNet)}
+            </span>
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ sandbox */
+
+function SandboxTab({ weights: initialWeights }: { weights: typeof DEFAULT_WEIGHTS }) {
+  const core = useCore();
+  const squad = useSquad();
+  const {
+    sandbox,
+    byId,
+    toggleSandbox,
+    resetSandbox,
+    undo,
+    applyToTeam,
+    sandboxDelta,
+  } = squad;
+  const toast = useToast();
+  const [dialogPlayer, setDialogPlayer] = useState<Player | null>(null);
+
+  const d = sandboxDelta();
+
+  const fixtureOf = (p: Player) => {
+    if (!core.fixtureIndex) return null;
+    return nextFixtures(core.fixtureIndex, p.teamId, core.nextGW, 1)[0] ?? null;
+  };
+
+  return (
+    <div className="od-stack" style={{ gap: 16 }}>
+      <Card reveal>
+        <div className="od-row" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <label className="od-row" style={{ gap: 8, cursor: 'pointer' }}>
+            <span
+              className="switch"
+              role="switch"
+              tabIndex={0}
+              aria-checked={sandbox.on}
+              onClick={toggleSandbox}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  toggleSandbox();
+                }
+              }}
+            />
+            <span className="small">
+              <b>Sandbox mode</b> <span className="muted">— changes never touch your real team</span>
+            </span>
+          </label>
+          <span className="spacer" />
+          <button className="btn btn-ghost btn-sm" type="button" disabled={!sandbox.history.length} onClick={undo}>
+            <Icon name="undo" size={14} /> Undo
+          </button>
+          <button className="btn btn-ghost btn-sm" type="button" disabled={!sandbox.transfers.length} onClick={resetSandbox}>
+            <Icon name="refresh" size={14} /> Reset
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            type="button"
+            disabled={!sandbox.transfers.length}
+            onClick={() => {
+              applyToTeam();
+              toast('Sandbox applied to your team for this plan.');
+            }}
+          >
+            <Icon name="check" size={14} /> Apply to team
+          </button>
+        </div>
+      </Card>
+
+      <DeltaStrip delta={d} />
+
+      <div className="cols-2">
+        <RecommendedTransfersCard />
+        <Card reveal title="Sandbox charts" actions={<Badge tone="info"><Icon name="cpu" size={12} /> Projected</Badge>}>
+          <div className="od-stack" style={{ gap: 18 }}>
+            <div>
+              <div className="tiny faint" style={{ textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 8 }}>
+                Starting XI xPts by position
+              </div>
+              <ColChart
+                items={(['GK', 'DEF', 'MID', 'FWD'] as const).map((pos) => {
+                  const sum = sandbox.xi
+                    .filter((id) => byId.get(id)?.pos === pos)
+                    .reduce((t, id) => t + (byId.get(id)?.xpts ?? 0), 0);
+                  const colors = { GK: 'var(--warn)', DEF: 'var(--info)', MID: 'var(--accent)', FWD: 'var(--neg)' };
+                  return { k: pos, v: Math.round(sum * 10) / 10, color: colors[pos] };
+                })}
+              />
+            </div>
+            <div>
+              <div className="tiny faint" style={{ textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 8 }}>
+                Transfer impact (xPts gain)
+              </div>
+              {sandbox.transfers.length ? (
+                <Bars
+                  items={sandbox.transfers.map((t) => ({
+                    k: t.inName.split(' ').slice(-1)[0],
+                    v: Math.max(0.1, t.gain),
+                    label: `${t.gain >= 0 ? '+' : ''}${t.gain}`,
+                    color: t.gain >= 0 ? 'var(--pos)' : 'var(--neg)',
+                  }))}
+                  max={Math.max(2, ...sandbox.transfers.map((t) => Math.abs(t.gain)))}
+                />
+              ) : (
+                <Empty icon="sliders" title="No transfers in the sandbox" text="Add a transfer to see its projected xPts impact." />
+              )}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Card
+        reveal
+        title={`Sandbox pitch · GW${core.nextGW}`}
+        actions={<Badge className="mono">{num(xiXpts(sandbox.xi, byId, sandbox.captainId), 1)} xPts</Badge>}
+      >
+        <Pitch
+          ids={sandbox.xi}
+          byId={byId}
+          captainId={sandbox.captainId}
+          viceId={sandbox.viceId}
+          swapId={sandbox.outId}
+          fixtureOf={fixtureOf}
+          onChipClick={setDialogPlayer}
+        />
+        <BenchRow
+          ids={sandbox.bench}
+          byId={byId}
+          captainId={sandbox.captainId}
+          viceId={sandbox.viceId}
+          swapId={sandbox.outId}
+          fixtureOf={fixtureOf}
+          onChipClick={setDialogPlayer}
+        />
+      </Card>
+
+      <div className="cols-2">
+        <TransferBuilder />
+        <BlendPanel initialWeights={initialWeights} />
+      </div>
+
+      <ChatPanel />
+
+      {dialogPlayer ? <PlayerActionDialog player={dialogPlayer} onClose={() => setDialogPlayer(null)} /> : null}
+    </div>
+  );
+}
+
+function DeltaStrip({ delta }: { delta: SandboxDelta }) {
+  if (!delta.count) {
+    return (
+      <Alert tone="info" icon="info">
+        <b>No changes yet.</b>{' '}
+        <span className="small">The sandbox matches your real team. Build a transfer below to see the projected impact.</span>
+      </Alert>
+    );
+  }
+  const item = (k: string, real: number, sand: number, d: number, dec: number, prefix = '', suffix = '') => (
+    <div className="stat-tile">
+      <span className="k">{k}</span>
+      <span className="v mono sm">
+        {prefix}
+        {real.toFixed(dec)}
+        {suffix} <span className="muted" style={{ fontSize: 'var(--fs-base)' }}>→</span> {prefix}
+        {sand.toFixed(dec)}
+        {suffix}
+      </span>
+      <span className={`d ${d >= 0 ? 'pos' : 'neg'} mono`}>
+        {d >= 0 ? '+' : ''}
+        {d.toFixed(dec)}
+        {suffix}
+      </span>
+    </div>
+  );
+  return (
+    <div className="stat-strip" style={{ gridTemplateColumns: 'repeat(5, minmax(0,1fr))' }}>
+      {item('GW xPts', delta.realGw, delta.sandGw, delta.gwDelta, 1)}
+      {item('Next 5 GW xPts', delta.real5, delta.sand5, delta.d5, 0)}
+      {item('Bank', 0, delta.bank, delta.bankDelta, 1, '£', 'm')}
+      <div className="stat-tile">
+        <span className="k">Transfers</span>
+        <span className="v mono sm">{delta.count}</span>
+        <span className="d muted">
+          {delta.free} free · {delta.hits} hit{delta.hits === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div className="stat-tile">
+        <span className="k">Hit cost</span>
+        <span className={`v mono sm ${delta.hitCost ? 'neg' : ''}`}>{delta.hitCost ? `−${delta.hitCost}` : '0'}</span>
+        <span className="d muted">−4 per extra transfer</span>
+      </div>
+    </div>
+  );
+}
+
+function RecommendedTransfersCard() {
+  const core = useCore();
+  const { applyRecommendation, sandbox } = useSquad();
+  const toast = useToast();
+  const recs = core.recommendedTransfers;
+
+  return (
+    <Card reveal title="Recommended transfers" actions={<Badge tone="accent">{recs.length}</Badge>}>
+      {recs.length ? (
+        <div className="od-stack" style={{ gap: 12 }}>
+          {recs.map((t) => {
+            const gain = Math.round(t.projected_points_delta * 10) / 10;
+            const done = sandbox.transfers.some((x) => x.inName === t.in.player_name);
+            const outId = findPlayerIdByName(core.players, t.out.player_name);
+            const inId = findPlayerIdByName(core.players, t.in.player_name);
+            const outP = outId ? core.playersById.get(outId) : undefined;
+            const inP = inId ? core.playersById.get(inId) : undefined;
+            return (
+              <div key={t.transfer_id} className="od-stack" style={{ gap: 8, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+                <div className="od-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <Badge tone="neg">OUT</Badge>
+                  {outP ? <Avatar player={outP} size={24} /> : null}
+                  <span className="small od-fill">{t.out.player_name}</span>
+                  <Icon name="swap" size={14} className="muted" />
+                  <Badge tone="pos">IN</Badge>
+                  {inP ? <Avatar player={inP} size={24} /> : null}
+                  <span className="small od-fill">{t.in.player_name}</span>
+                  <Badge tone="accent" className="mono">{plus(gain)} xPts</Badge>
+                </div>
+                <p className="tiny muted">{t.reason}</p>
+                <div className="od-row" style={{ gap: 8 }}>
+                  <button
+                    className={`btn ${done ? 'btn-ghost' : 'btn-primary'} btn-sm`}
+                    type="button"
+                    disabled={done}
+                    onClick={() => {
+                      const outId = findPlayerIdByName(core.players, t.out.player_name);
+                      const inId = findPlayerIdByName(core.players, t.in.player_name);
+                      if (outId && inId && applyRecommendation(outId, inId)) {
+                        toast('Transfer added to the sandbox.', 'pos');
+                      } else {
+                        toast('That move isn’t valid for your squad.', 'neg');
+                      }
+                    }}
+                  >
+                    {done ? <><Icon name="check" size={14} /> Added</> : 'Apply in sandbox'}
+                  </button>
+                  <Link className="btn btn-ghost btn-sm" to={`/player/${findPlayerIdByName(core.players, t.in.player_name) ?? ''}?from=command`}>
+                    <Icon name="eye" size={14} /> Profile
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="small muted">
+          Run a model blend to generate transfer recommendations grounded in your squad.
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function TransferBuilder() {
+  const core = useCore();
+  const { sandbox, byId, pickOut, pickIn, clearPair, applySandboxTransfer } = useSquad();
+  const toast = useToast();
+  const [search, setSearch] = useState('');
+  const [posFilter, setPosFilter] = useState<'all' | 'GK' | 'DEF' | 'MID' | 'FWD'>('all');
+  const [sortKey, setSortKey] = useState<'xpts' | 'price' | 'form' | 'own'>('xpts');
+
+  const squadIds = [...sandbox.xi, ...sandbox.bench];
+  const outPlayer = sandbox.outId != null ? byId.get(sandbox.outId) : undefined;
+
+  const available = core.players
+    .filter((p) => !squadIds.includes(p.id) && p.status !== 'i')
+    .filter((p) => (posFilter === 'all' ? true : p.pos === posFilter))
+    .filter((p) => (outPlayer && posFilter === 'all' ? p.pos === outPlayer.pos : true))
+    .filter((p) => (search ? p.name.toLowerCase().includes(search.toLowerCase()) : true))
+    .sort((a, b) => {
+      if (sortKey === 'price') return b.price - a.price;
+      if (sortKey === 'form') return b.form - a.form;
+      if (sortKey === 'own') return b.own - a.own;
+      return b.xpts - a.xpts;
+    })
+    .slice(0, 60);
+
+  return (
+    <Card
+      reveal
+      title="Custom transfer builder"
+      actions={
+        <Badge tone={sandbox.inId ? 'pos' : sandbox.outId ? 'info' : ''}>
+          {sandbox.outId ? 'Step 2 of 2 · pick replacement' : 'Step 1 of 2 · pick a player to sell'}
+        </Badge>
+      }
+    >
+      <div className="od-stack" style={{ gap: 14 }}>
+        <div className="od-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <Segmented
+            ariaLabel="Position filter"
+            value={posFilter}
+            onChange={(v) => setPosFilter(v)}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'GK', label: 'GK' },
+              { value: 'DEF', label: 'DEF' },
+              { value: 'MID', label: 'MID' },
+              { value: 'FWD', label: 'FWD' },
+            ]}
+          />
+          <span className="spacer" />
+          <label className="od-row" style={{ gap: 6 }}>
+            <span className="tiny faint">Sort</span>
+            <select
+              className="select"
+              aria-label="Sort available players"
+              style={{ minHeight: 34, padding: '0 32px 0 10px', fontSize: 'var(--fs-xs)' }}
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+            >
+              <option value="xpts">xPts</option>
+              <option value="price">Price</option>
+              <option value="form">Form</option>
+              <option value="own">Ownership</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="grid grid-2" style={{ gap: 16 }}>
+          <div className="od-stack" style={{ gap: 8 }}>
+            <div className="tiny faint" style={{ textTransform: 'uppercase', letterSpacing: '.12em' }}>
+              Your squad — pick OUT
+            </div>
+            <div className="od-scroll" style={{ maxHeight: 340, display: 'grid', gap: 2 }}>
+              {sandbox.xi.concat(sandbox.bench).map((id) => {
+                const p = byId.get(id);
+                if (!p) return null;
+                return <BuilderRow key={id} player={p} selected={sandbox.outId === p.id} bench={sandbox.bench.includes(id)} onClick={() => pickOut(p.id)} />;
+              })}
+            </div>
+          </div>
+          <div className="od-stack" style={{ gap: 8 }}>
+            <div className="tiny faint" style={{ textTransform: 'uppercase', letterSpacing: '.12em' }}>
+              {outPlayer ? `Available ${outPlayer.pos}s — pick IN` : 'Available players'}
+            </div>
+            <input
+              className="input"
+              placeholder="Search players…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search available players"
+              style={{ minHeight: 40 }}
+            />
+            <div className="od-scroll" style={{ maxHeight: 296, display: 'grid', gap: 2 }}>
+              {available.length ? (
+                available.map((p) => (
+                  <BuilderRow key={p.id} player={p} selected={sandbox.inId === p.id} onClick={() => pickIn(p.id)} />
+                ))
+              ) : (
+                <Empty title="No players match" text="Try another position or clear the search." />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {sandbox.outId && sandbox.inId ? (
+          <Alert tone="pos" icon="swap">
+            <span className="small">
+              <b>{byId.get(sandbox.outId)?.name}</b> → <b>{byId.get(sandbox.inId)?.name}</b> ·{' '}
+              {money(Math.max(0, (byId.get(sandbox.inId)?.price ?? 0) - (byId.get(sandbox.outId)?.price ?? 0)))} spend
+            </span>
+            <div className="od-row" style={{ gap: 8, marginTop: 8 }}>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={clearPair}>
+                Clear
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                type="button"
+                onClick={() => {
+                  if (applySandboxTransfer()) toast('Transfer added to the sandbox.', 'pos');
+                  else toast('That move isn’t valid.', 'neg');
+                }}
+              >
+                Make transfer
+              </button>
+            </div>
+          </Alert>
+        ) : sandbox.outId ? (
+          <Alert tone="info" icon="info">
+            <span className="small">
+              Now pick a replacement for <b>{outPlayer?.name}</b> from the available list.
+            </span>
+          </Alert>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function BuilderRow({
+  player,
+  selected,
+  bench,
+  onClick,
+}: {
+  player: Player;
+  selected: boolean;
+  bench?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="od-row"
+      onClick={onClick}
+      style={{
+        gap: 10,
+        width: '100%',
+        textAlign: 'left',
+        padding: '8px 10px',
+        borderRadius: 'var(--r-sm)',
+        border: `1px solid ${selected ? 'var(--accent)' : 'transparent'}`,
+        background: selected ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+        cursor: 'pointer',
+      }}
+    >
+      <Avatar player={player} size={28} />
+      <Crest club={player.club} size={18} />
+      <span className="od-fill">
+        <span className="small" style={{ fontWeight: 600, display: 'block' }}>
+          {player.name} {bench ? <span className="badge">Bench</span> : null}{' '}
+          {player.status !== 'a' ? <span className="badge warn">Flagged</span> : null}
+        </span>
+        <span className="tiny faint">
+          {player.pos} · {player.club.short} · {money(player.price)} · form {player.form}
+        </span>
+      </span>
+      <span className={`pos-badge pos-${player.pos}`}>{player.pos}</span>
+      <span className="od-stat" style={{ textAlign: 'right', minWidth: 64 }}>
+        <span className="tiny muted">
+          xPts <b className="mono" style={{ color: 'var(--text)' }}>{player.xpts.toFixed(1)}</b>
+        </span>
+        <span className="tiny faint">{num(player.own, 1)}% own</span>
+      </span>
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------- blend */
+
+function BlendPanel({ initialWeights }: { initialWeights: typeof DEFAULT_WEIGHTS }) {
+  const core = useCore();
+  const squad = useSquad();
+  const toast = useToast();
+  const { teamId } = useTeamId();
+  const [weights, setWeights] = useState(initialWeights);
+  const [status, setStatus] = useState<'idle' | 'pending' | 'running' | 'completed' | 'failed'>('idle');
+  const [progress, setProgress] = useState(0);
+
+  const total = weights.official + weights.elo + weights.airsenal + weights.copilot;
+  const over = total > 100;
+  const exact = total === 100;
+
+  const models: { key: keyof typeof weights; name: string; desc: string }[] = [
+    { key: 'official', name: 'Official FPL', desc: 'Form, ownership and FPL’s own ICT index.' },
+    { key: 'elo', name: 'Club Elo', desc: 'Team-strength ratings built from historical results.' },
+    { key: 'airsenal', name: 'AIrsenal', desc: 'Gradient-boosted expected-points model.' },
+    { key: 'copilot', name: 'Copilot', desc: 'Injury- and minutes-aware hybrid of the above.' },
+  ];
+
+  const apply = async () => {
+    if (total !== 100) return;
+    setStatus('pending');
+    setProgress(8);
+    try {
+      const currentSquad = [...squad.sandbox.xi, ...squad.sandbox.bench]
+        .map((id) => core.playersById.get(id))
+        .filter((p): p is Player => Boolean(p))
+        .map((p) => ({
+          fpl_api_id: p.id,
+          player_name: p.name,
+          team: p.club.short,
+          position: p.pos,
+          price: p.price,
+          x_pts: p.xpts,
+        }));
+
+      const request: CopilotBlendSubmitRequest = {
+        schema_version: '1.0',
+        correlation_id: crypto.randomUUID(),
+        source_weights: normalizeSourceWeights(weights.elo, weights.airsenal),
+        gameweek: core.nextGW,
+        bank: core.manager?.bank ?? 0,
+        free_transfers: core.manager?.freeTransfers ?? 1,
+        current_squad: currentSquad,
+        fpl_team_id: teamId ? Number(teamId) : undefined,
+        task: 'hybrid',
+      };
+
+      const accepted = await submitCopilotBlendJob(request);
+      setStatus('running');
+      setProgress(30);
+
+      const poll = window.setInterval(async () => {
+        try {
+          const s = await getCopilotBlendJobStatus(accepted.job_id);
+          setProgress((p) => Math.min(95, p + 8));
+          if (s.status === 'completed') {
+            window.clearInterval(poll);
+            setProgress(100);
+            setStatus('completed');
+            toast('Blend applied. Ask Copilot is now grounded in your squad.', 'pos');
+            core.refresh();
+          } else if (s.status === 'failed') {
+            window.clearInterval(poll);
+            setStatus('failed');
+            toast('Blend failed. Your previous weights are unchanged.', 'neg');
+          }
+        } catch {
+          window.clearInterval(poll);
+          setStatus('failed');
+          toast('Blend failed while polling the job.', 'neg');
+        }
+      }, 1500);
+    } catch {
+      setStatus('failed');
+      toast('Blend failed. The model service may be unavailable.', 'neg');
+    }
+  };
+
+  return (
+    <Card
+      reveal
+      title="Model blending"
+      actions={
+        <Badge tone={over ? 'neg' : exact ? 'pos' : 'warn'}>
+          {total}% {over ? '· over budget' : exact ? '· ready' : `· ${100 - total}% left`}
+        </Badge>
+      }
+    >
+      <div className="od-stack" style={{ gap: 16 }}>
+        {models.map((m) => (
+          <div className="od-stack" key={m.key} style={{ gap: 4 }}>
+            <div className="od-row" style={{ gap: 8 }}>
+              <span className="small" style={{ fontWeight: 600 }}>
+                {m.name}
+              </span>
+              <span className="spacer" />
+              <span className={`mono small ${over ? 'neg' : ''}`}>{weights[m.key]}%</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={weights[m.key]}
+              aria-label={`${m.name} weight`}
+              onChange={(e) =>
+                setWeights((w) => ({ ...w, [m.key]: Number(e.target.value) }))
+              }
+            />
+            <span className="tiny faint">{m.desc}</span>
+          </div>
+        ))}
+        <div className="progress">
+          <i
+            style={{
+              width: `${Math.min(100, total)}%`,
+              background: over ? 'var(--neg)' : exact ? 'var(--accent)' : 'var(--warn)',
+            }}
+          />
+        </div>
+        <p className="tiny faint">
+          Club Elo and AIrsenal are the two blendable model sources; their weights are normalized for the
+          run. Official FPL and Copilot are shown for context.
+        </p>
+        {over ? (
+          <Alert tone="neg" icon="alert">
+            <span className="small">
+              Weights add up to {total}%. Blending is blocked above 100% — reduce a model by {total - 100} points.
+            </span>
+          </Alert>
+        ) : null}
+        {status === 'pending' || status === 'running' ? (
+          <div className="od-stack" style={{ gap: 6 }}>
+            <div className="od-row small">
+              <span className="mono">
+                <Icon name="cpu" size={14} /> Blending models…
+              </span>
+              <span className="spacer" />
+              <span className="mono">{Math.round(progress)}%</span>
+            </div>
+            <div className="progress">
+              <i style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+        ) : null}
+        {status === 'completed' ? (
+          <Alert tone="pos" icon="check">
+            <span className="small">
+              <b>Blend applied.</b> Projections now use {weights.official}/{weights.elo}/{weights.airsenal}/
+              {weights.copilot} (official / Elo / AIrsenal / Copilot). Ask Copilot is unlocked.
+            </span>
+          </Alert>
+        ) : null}
+        {status === 'failed' ? (
+          <Alert
+            tone="neg"
+            icon="alert"
+            actions={
+              <button className="btn btn-ghost btn-sm" type="button" onClick={apply}>
+                Retry
+              </button>
+            }
+          >
+            <span className="small">
+              <b>Blend failed.</b> The model service timed out. Your previous weights are unchanged.
+            </span>
+          </Alert>
+        ) : null}
+        <div className="od-row" style={{ gap: 8 }}>
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={over || !exact || status === 'pending' || status === 'running'}
+            onClick={apply}
+          >
+            <Icon name="cpu" size={16} /> Apply Blend
+          </button>
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={() => {
+              setWeights(DEFAULT_WEIGHTS);
+              setStatus('idle');
+            }}
+          >
+            Reset to default
+          </button>
+          <span className="spacer" />
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            title="Copy a shareable link to these weights"
+            onClick={() => {
+              const url = `${location.origin}${location.pathname}?tab=sandbox&w=official:${weights.official},elo:${weights.elo},airsenal:${weights.airsenal},copilot:${weights.copilot}`;
+              void navigator.clipboard?.writeText(url).catch(() => {});
+              toast('Weights link copied. Shareable and deep-linkable.', 'info');
+            }}
+          >
+            <Icon name="send" size={14} /> Share weights
+          </button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------------- chat */
+
+function ChatPanel() {
+  const core = useCore();
+  const toast = useToast();
+  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
+    {
+      role: 'assistant',
+      content:
+        'I’m grounded in your squad and the live model output. Ask me about captaincy, transfers, chip timing or a specific fixture run.',
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [thinking, setThinking] = useState(false);
+  const threadRef = useRef<HTMLDivElement>(null);
+
+  const enabled = Boolean(core.blendResult && core.blendInput);
+
+  useEffect(() => {
+    if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
+  }, [messages, thinking]);
+
+  const send = async () => {
+    const q = input.trim();
+    if (!q || !enabled || !core.blendResult || !core.blendInput) return;
+    const next = [...messages, { role: 'user' as const, content: q }];
+    setMessages(next);
+    setInput('');
+    setThinking(true);
+    try {
+      const turns: CopilotChatTurn[] = next
+        .slice(0, -1)
+        .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+      const res = await postCopilotChat({
+        schema_version: '1.0',
+        correlation_id: crypto.randomUUID(),
+        message: q,
+        messages: turns,
+        blend_input: core.blendInput,
+        blend_result: core.blendResult,
+      });
+      setMessages((cur) => [...cur, { role: 'assistant', content: res.answer }]);
+    } catch {
+      toast('Copilot could not answer right now.', 'neg');
+      setMessages((cur) => [
+        ...cur,
+        { role: 'assistant', content: 'I couldn’t reach the model service. Try again in a moment.' },
+      ]);
+    } finally {
+      setThinking(false);
+    }
+  };
+
+  return (
+    <Card
+      reveal
+      title="Ask Copilot"
+      actions={
+        <Badge tone={enabled ? 'accent' : ''}>
+          {enabled ? (
+            <>
+              <Icon name="check" size={12} /> Grounded in your squad
+            </>
+          ) : (
+            <>
+              <Icon name="lock" size={12} /> Apply a blend first
+            </>
+          )}
+        </Badge>
+      }
+      bodyClassName="tight"
+    >
+      <div className="chat">
+        <div className="chat-thread" ref={threadRef}>
+          {messages.map((m, i) => (
+            <div key={i} className={`msg ${m.role === 'assistant' ? 'ai' : 'user'}`}>
+              {m.content}
+            </div>
+          ))}
+          {thinking ? (
+            <div className="msg ai thinking">
+              <i />
+              <i />
+              <i />
+              <span className="sr">Copilot is thinking</span>
+            </div>
+          ) : null}
+        </div>
+        <form
+          className="chat-input"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
+          }}
+        >
+          <input
+            className="input"
+            placeholder={enabled ? 'Ask about captaincy, transfers, chips…' : 'Apply a model blend to unlock the assistant'}
+            value={input}
+            disabled={!enabled}
+            aria-label="Ask Copilot a question"
+            autoComplete="off"
+            onChange={(e) => setInput(e.target.value)}
+          />
+          <button className="btn btn-primary btn-icon" type="submit" disabled={!enabled} aria-label="Send">
+            <Icon name="send" size={18} />
+          </button>
+        </form>
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------- optimize */
+
+function OptimizeButton({ variant = 'full' }: { variant?: 'full' | 'quick' }) {
+  const core = useCore();
+  const toast = useToast();
+  const { teamId } = useTeamId();
+  const [open, setOpen] = useState(false);
+  const [weeks, setWeeks] = useState(5);
+  const [running, setRunning] = useState(false);
+
+  const run = async () => {
+    setRunning(true);
+    try {
+      await runAirsenal({
+        action: 'optimize',
+        weeks_ahead: weeks,
+        fpl_team_id: teamId ? Number(teamId) : null,
+      });
+      await runAirsenal({ action: 'export', fpl_team_id: teamId ? Number(teamId) : null }).catch(() => {});
+      toast(`Optimization complete across ${weeks} GWs.`, 'pos');
+      core.refresh();
+      setOpen(false);
+    } catch {
+      toast('Optimization failed. Check the backend AIrsenal logs.', 'neg');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const label = variant === 'quick' ? 'Run AIrsenal optimization' : 'Run AIrsenal optimization';
+
+  return (
+    <>
+      <button className={variant === 'quick' ? 'btn btn-ghost' : 'btn btn-ghost'} style={variant === 'quick' ? { justifyContent: 'flex-start', textAlign: 'left' } : undefined} type="button" onClick={() => setOpen(true)}>
+        <Icon name="optimize" size={16} />
+        {variant === 'quick' ? (
+          <span className="od-stack" style={{ gap: 0, alignItems: 'flex-start' }}>
+            <span>{label}</span>
+            <span className="tiny faint" style={{ fontWeight: 400 }}>
+              Multi-gameweek solver
+            </span>
+          </span>
+        ) : (
+          label
+        )}
+      </button>
+
+      {open ? (
+        <div className="scrim" onClick={() => !running && setOpen(false)}>
+          <div className="dialog" role="dialog" aria-modal="true" aria-label="AIrsenal optimization" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-head">
+              <h3>AIrsenal optimization</h3>
+              <span className="spacer" />
+              <button className="btn btn-icon btn-ghost" type="button" onClick={() => !running && setOpen(false)} aria-label="Close">
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="dialog-body od-stack" style={{ gap: 16 }}>
+              <p className="small muted">
+                The solver searches transfer combinations across the next N gameweeks and returns the highest
+                projected total, accounting for free transfers and −4 hits.
+              </p>
+              <div className="field">
+                <span className="label">Weeks ahead</span>
+                <div className="od-row" style={{ gap: 12 }}>
+                  <button className="btn btn-icon btn-ghost" type="button" disabled={weeks <= 1} onClick={() => setWeeks((w) => Math.max(1, w - 1))} aria-label="Fewer weeks">
+                    <Icon name="minus" />
+                  </button>
+                  <span className="mono" style={{ fontSize: 'var(--fs-2xl)', minWidth: 64, textAlign: 'center' }}>
+                    {weeks}
+                  </span>
+                  <button className="btn btn-icon btn-ghost" type="button" disabled={weeks >= 38} onClick={() => setWeeks((w) => Math.min(38, w + 1))} aria-label="More weeks">
+                    <Icon name="plus" />
+                  </button>
+                  <input type="range" min={1} max={38} value={weeks} aria-label="Weeks ahead" style={{ flex: 1 }} onChange={(e) => setWeeks(Number(e.target.value))} />
+                </div>
+                <span className="help">
+                  Covers GW{core.nextGW}–GW{Math.min(38, core.nextGW + weeks - 1)}
+                </span>
+              </div>
+              {running ? (
+                <div className="od-stack" style={{ gap: 10, alignItems: 'center' }}>
+                  <span style={{ color: 'var(--accent)', animation: 'spin 1.1s linear infinite', display: 'inline-block' }}>
+                    <Icon name="optimize" size={36} />
+                  </span>
+                  <b>Solving…</b>
+                  <div className="progress" style={{ width: '100%' }}>
+                    <i style={{ width: '60%' }} />
+                  </div>
+                  <span className="tiny muted">This can take several minutes. Keep this tab open.</span>
+                </div>
+              ) : (
+                <Alert tone="info" icon="info">
+                  <span className="small">Longer horizons find better chip timing but take noticeably longer to solve.</span>
+                </Alert>
+              )}
+            </div>
+            <div className="dialog-foot">
+              <button className="btn btn-ghost" type="button" disabled={running} onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" type="button" disabled={running} onClick={() => void run()} aria-busy={running}>
+                <Icon name="optimize" size={16} /> {running ? 'Running…' : 'Run optimization'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}

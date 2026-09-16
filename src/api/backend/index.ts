@@ -1,11 +1,12 @@
 export { backendFetch, isApiError } from "./client";
 export type { ApiError } from "./client";
-export { getMyTeam } from "./myTeam";
+export { getMyTeam, refreshMyTeam } from "./myTeam";
 export type {
   MyTeamResponse,
   MyTeamPick,
   MyTeamChip,
   MyTeamTransfers,
+  RefreshTeamResponse,
 } from "./myTeam";
 
 // AIrsenal endpoints
@@ -36,6 +37,10 @@ export type { BandwagonPlayer, BandwagonsResponse } from "./bandwagons";
 // Injury News endpoint
 export { getInjuryNews } from "./injuryNews";
 export type { InjuryNewsPlayer, InjuryNewsResponse } from "./injuryNews";
+
+// Latest transfers made by the manager
+export { getTransfersLatest } from "./transfersLatest";
+export type { LatestTransferRow, TransfersLatestResponse } from "./transfersLatest";
 
 // FDR + ClubElo (copilot backend)
 export { getFdrEloSnapshot, getTeamFdrFixtures } from "./fdr";

@@ -1,12 +1,17 @@
 import { backendFetch, extractArrayPayload } from './client';
 
 export interface LatestTransferRow {
+  element_in?: number;
+  element_out?: number;
+  element_in_cost?: number;
+  element_out_cost?: number;
+  entry?: number;
+  event?: number;
+  time?: string;
   player_in_id?: number;
   player_out_id?: number;
   in_player_id?: number;
   out_player_id?: number;
-  element_in?: number;
-  element_out?: number;
   player_in?: string;
   player_out?: string;
   in_name?: string;
