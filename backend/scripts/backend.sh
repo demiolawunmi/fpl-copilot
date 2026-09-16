@@ -20,6 +20,11 @@ fi
 
 ROOT_VENV_ACTIVATE="$REPO_ROOT/.venv/bin/activate"
 
+# --- apply vendored-AIrsenal compatibility patches (idempotent) ---
+if [[ -f "$REPO_ROOT/scripts/apply_airsenal_patches.sh" ]]; then
+  bash "$REPO_ROOT/scripts/apply_airsenal_patches.sh" || true
+fi
+
 # --- load .env.local if present ---
 ENV_FILE="$REPO_ROOT/.env.local"
 if [[ -f "$ENV_FILE" ]]; then

@@ -6,6 +6,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AIRSENAL_HOME_DIR="$REPO_ROOT/.airsenal_home"
 AIRSENAL_VENV_ACTIVATE="$REPO_ROOT/AIrsenal/.venv/bin/activate"
 
+# --- apply vendored-AIrsenal compatibility patches (idempotent) ---
+# Keeps the AIrsenal submodule pinned to a clean upstream commit while still
+# applying our season-rollover fixes at runtime.
+if [[ -f "$REPO_ROOT/scripts/apply_airsenal_patches.sh" ]]; then
+  bash "$REPO_ROOT/scripts/apply_airsenal_patches.sh" || true
+fi
+
 # --- deactivate current venv if any (only works when sourced) ---
 if [[ -n "${VIRTUAL_ENV-}" ]]; then
   if declare -F deactivate >/dev/null 2>&1; then

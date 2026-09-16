@@ -59,6 +59,27 @@ def resolve_team_id(env: dict[str, str], override: Optional[int]) -> Optional[st
     return tid if tid else None
 
 
+def ensure_airsenal_patches(repo_root: Path) -> None:
+    """Apply the repo-shipped compatibility patches to the AIrsenal submodule.
+
+    Best-effort and idempotent: keeps the submodule at a clean upstream commit
+    while still getting our season-rollover fixes. Never raises.
+    """
+    script = repo_root / "scripts" / "apply_airsenal_patches.sh"
+    if not script.is_file():
+        return
+    try:
+        subprocess.run(
+            ["bash", str(script)],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception:  # noqa: BLE001 - never block a run on patch application
+        pass
+
+
 def _truncate(s: str, max_len: int = 24_000) -> str:
     if len(s) <= max_len:
         return s
@@ -103,6 +124,7 @@ def run_airsenal_action(
     timeout_sec: Optional[int] = None,
 ) -> AirsenalRunResponse:
     repo_root = find_repo_root()
+    ensure_airsenal_patches(repo_root)
     env = build_airsenal_run_env(repo_root)
     venv_bin = resolve_venv_bin(repo_root)
     timeout = timeout_sec if timeout_sec is not None else int(os.environ.get("AIRSENAL_RUN_TIMEOUT_SEC", "3600"))
