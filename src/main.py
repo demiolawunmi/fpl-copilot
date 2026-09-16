@@ -151,6 +151,51 @@ def season_status():
     return get_season_status()
 
 
+@app.post("/api/fpl/refresh-team")
+def refresh_fpl_team() -> Dict[str, Any]:
+    """Re-pull the authenticated squad (my_team.json) from the official FPL API.
+
+    Runs ``adapters/fpl_private_adapter.py`` in a subprocess, which reuses cached
+    FPL tokens (refreshing or re-logging in as needed) and rewrites
+    ``data/api/my_team.json`` + ``me.json`` + ``transfers_latest.json``. Use this
+    after making changes to your team on the official platform.
+    """
+    import subprocess
+    import sys
+
+    script = REPO_ROOT / "adapters" / "fpl_private_adapter.py"
+    if not script.is_file():
+        raise HTTPException(status_code=503, detail=f"Adapter not found: {script}")
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="Refreshing the FPL team timed out") from exc
+
+    if completed.returncode != 0:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Failed to refresh FPL team",
+                "stderr": (completed.stderr or "")[-1500:],
+                "stdout": (completed.stdout or "")[-500:],
+            },
+        )
+
+    my_team_path = DATA_DIR / "my_team.json"
+    return {
+        "ok": True,
+        "my_team_mtime": my_team_path.stat().st_mtime if my_team_path.is_file() else None,
+        "stdout": (completed.stdout or "").strip()[-300:],
+    }
+
+
 def _require_airsenal_run_key(
     x_airsenal_run_key: Optional[str] = Header(None, alias="X-Airsenal-Run-Key"),
 ) -> None:
