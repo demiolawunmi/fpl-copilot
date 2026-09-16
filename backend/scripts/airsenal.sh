@@ -76,6 +76,10 @@ REPO_AIRSENAL_DB="$REPO_ROOT/data/airsenal/data.db"
 mkdir -p "$(dirname "$REPO_AIRSENAL_DB")"
 export AIRSENAL_DB_FILE="$REPO_AIRSENAL_DB"
 
+# Make the vendored AIrsenal package importable even without an editable
+# install (pip install -e .) in the AIrsenal venv.
+export PYTHONPATH="$REPO_ROOT/AIrsenal${PYTHONPATH:+:$PYTHONPATH}"
+
 echo "✅ Activated AIrsenal venv: $VIRTUAL_ENV"
 echo "✅ AIRSENAL_HOME=$AIRSENAL_HOME"
 if [[ -n "${AIRSENAL_DB_FILE:-}" ]]; then

@@ -36,6 +36,11 @@ def build_airsenal_run_env(repo_root: Path) -> dict[str, str]:
         val = _read_optional_file(home / fname)
         if val:
             env[fname] = val
+    # Make the vendored package importable even if it wasn't pip-installed
+    # (editable) into the AIrsenal venv (e.g. a fresh clone).
+    airsenal_src = repo_root / "AIrsenal"
+    prev = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(airsenal_src) + (os.pathsep + prev if prev else "")
     return env
 
 
