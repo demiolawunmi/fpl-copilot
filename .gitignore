@@ -1,0 +1,43 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# AI agent state
+.sisyphus/
+.agent/
+.opencode/
+.cursor/
+.claude/
+.aider*
+.continue/
+.roo/
+.codex/
+.kilocode/
+.windsurf/
+.agent-state/
+
+# Local runtime data
+*.log
+*.pid
+*.sock
