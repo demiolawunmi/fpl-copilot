@@ -1,0 +1,3 @@
+[submodule "AIrsenal"]
+	path = AIrsenal
+	url = https://github.com/alan-turing-institute/AIrsenal.git
